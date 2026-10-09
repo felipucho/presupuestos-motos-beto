@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatoMoneda, formatoNumero } from '@/lib/formato';
+import { formatoMoneda, formatoNumero, sinTildes } from '@/lib/formato';
 import { borrarRegistro, cargarHistorial, type Registro } from '@/lib/historial';
 import { enTramo, metricas, mover, rango, tramos, type Periodo } from '@/lib/metricas';
-import { abrirArchivo } from '@/lib/storage';
+import { abrirArchivo } from '@/lib/archivos';
 import { cn } from '@/lib/utils';
 
 const PERIODOS: { id: Periodo; label: string; anterior: string }[] = [
@@ -24,8 +24,8 @@ const PERIODOS: { id: Periodo; label: string; anterior: string }[] = [
 
 const MAX_FILAS = 200;
 
-const hora = (iso: string) => new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-const sinTildes = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es');
+const fmtHora = new Intl.DateTimeFormat('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const hora = (iso: string) => fmtHora.format(new Date(iso));
 
 export function Historial() {
   const [registros, setRegistros] = useState<Registro[] | null>(null);
@@ -53,7 +53,8 @@ export function Historial() {
 
   const datos = useMemo(() => {
     const todos = registros ?? [];
-    const enPeriodo = todos.filter((r) => enTramo(r, rango(periodo, ref)));
+    const tramo = rango(periodo, ref);
+    const enPeriodo = todos.filter((r) => enTramo(r, tramo));
     const anterior = periodo === 'todo' ? null : metricas(todos.filter((r) => enTramo(r, rango(periodo, mover(periodo, ref, -1)))));
     const primero = todos[0] ? new Date(todos[0].fecha) : null;
     const barras = tramos(periodo, ref, primero, new Date()).map((t) => ({ ...t, cantidad: enPeriodo.filter((r) => enTramo(r, t)).length }));

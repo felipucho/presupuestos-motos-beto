@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfig } from '@/lib/config';
+import { quitarPor, upsertPor } from '@/lib/listas';
 import { formatoMoneda } from '@/lib/formato';
 import { erroresPorCampo, gastoSchema, nuevoId, type Gasto } from '@/lib/schema';
 
@@ -81,7 +82,7 @@ export function Gastos() {
         onCerrar={() => setEditando(null)}
         onGuardar={(g) => {
           const existe = config.gastos.some((x) => x.id === g.id);
-          actualizar((c) => ({ ...c, gastos: existe ? c.gastos.map((x) => (x.id === g.id ? g : x)) : [...c.gastos, g] }), existe ? 'Gasto actualizado' : 'Gasto agregado');
+          actualizar((c) => ({ ...c, gastos: upsertPor(c.gastos, g) }), existe ? 'Gasto actualizado' : 'Gasto agregado');
           setEditando(null);
         }}
       />
@@ -91,7 +92,7 @@ export function Gastos() {
         titulo="¿Borrar este gasto?"
         accion="Borrar gasto"
         peligro
-        onConfirmar={() => borrando && actualizar((c) => ({ ...c, gastos: c.gastos.filter((x) => x.id !== borrando.id) }), 'Gasto borrado')}
+        onConfirmar={() => borrando && actualizar((c) => ({ ...c, gastos: quitarPor(c.gastos, borrando.id) }), 'Gasto borrado')}
       >
         Se va a quitar <b>{borrando?.nombre}</b> de la lista de gastos.
       </Confirmar>
@@ -114,6 +115,7 @@ function GastoDialog(props: { gasto: Gasto | 'nuevo' | null; onCerrar: () => voi
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
+    if (!props.gasto) return; // diálogo ya cerrado: evita duplicar por doble envío
     const r = gastoSchema.safeParse({ id: id ?? nuevoId(), nombre, monto: monto ?? NaN });
     if (!r.success) {
       const errs = erroresPorCampo(r.error);
@@ -133,7 +135,7 @@ function GastoDialog(props: { gasto: Gasto | 'nuevo' | null; onCerrar: () => voi
           </DialogHeader>
           <div className="grid grid-cols-[1.4fr_1fr] gap-4">
             <Campo id="gasto-nombre" label="Nombre" error={errores.nombre}>
-              <Input id="gasto-nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Ej.: Flete" autoFocus {...invalido('gasto-nombre', errores.nombre)} />
+              <Input id="gasto-nombre" value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus {...invalido('gasto-nombre', errores.nombre)} />
             </Campo>
             <Campo id="gasto-monto" label="Monto" error={errores.monto}>
               <InputDinero id="gasto-monto" value={monto} onValueChange={setMonto} {...invalido('gasto-monto', errores.monto)} />

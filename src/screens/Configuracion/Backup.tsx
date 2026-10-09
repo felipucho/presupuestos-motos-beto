@@ -11,7 +11,7 @@ import { useFiados } from '@/lib/fiados-store';
 import { formatoCentavos } from '@/lib/formato';
 import { cargarHistorial, reemplazarHistorial, type Registro } from '@/lib/historial';
 import type { Config } from '@/lib/schema';
-import { enTauri } from '@/lib/storage';
+import { enTauri } from '@/lib/entorno';
 
 const n = (cant: number, uno: string, varios: string) => `${cant} ${cant === 1 ? uno : varios}`;
 
@@ -44,15 +44,18 @@ export function Backup() {
   };
 
   const aplicar = async (i: Importado) => {
+    let copia = '';
     try {
       // Antes de pisar nada, una copia de lo que hay: si el archivo era el equivocado, se recupera de ahí.
-      const copia = await copiaAntesDeImportar(await actual());
-      reemplazar(i.config);
+      copia = await copiaAntesDeImportar(await actual());
+      // Una por una y esperando cada escritura: si una falla, el toast dice dónde quedó lo anterior.
+      await reemplazar(i.config);
       if (i.historial) await reemplazarHistorial(i.historial);
-      if (i.fiados) fiadosCtx.reemplazar(i.fiados);
+      if (i.fiados) await fiadosCtx.reemplazar(i.fiados);
       toast.success('Backup importado', { description: `Lo que había antes quedó guardado en ${copia}`, duration: 15000 });
     } catch (e) {
-      toast.error('No se pudo importar', { description: String(e), duration: Infinity });
+      const antes = copia ? ` Lo que había antes quedó guardado en ${copia}.` : '';
+      toast.error('No se pudo importar', { description: `${String(e).replace(/\.$/, '')}.${antes}`, duration: Infinity });
     }
   };
 

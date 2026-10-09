@@ -1,7 +1,22 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import { ChevronLeft, ChevronRight, ExternalLink, HandCoins, LoaderCircle, LogIn, PackageSearch, Search, TriangleAlert, X } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  HandCoins,
+  KeyRound,
+  LoaderCircle,
+  LogIn,
+  PackageSearch,
+  Search,
+  Settings2,
+  ShoppingCart,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { EstadoVacio } from '@/components/estado-vacio';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -9,39 +24,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import {
-  abrirCba,
-  accionCba,
-  buscarCba,
-  fichaCba,
-  IVA_POR_DEFECTO,
-  loginCba,
-  ORDENES,
-  costoConIva,
-  precioConIva,
-  SinSesion,
-  type Accion,
-  type Articulo,
-  type Ficha,
-  type Resultado,
-} from '@/lib/cba';
+import { IVA_POR_DEFECTO, LoginFallido, ORDENES, costoConIva, precioConIva, SinSesion, type Accion, type Articulo, type Ficha } from '@/lib/cba';
+import { useBusqueda, type Estado } from '@/lib/busqueda-cba';
+import type { Proveedor } from '@/lib/proveedores';
 import { useConfig } from '@/lib/config';
 import { aCentavos, totalItems, type Item } from '@/lib/fiados';
 import { ARMADO_VACIO, useFiados } from '@/lib/fiados-store';
 import { formatoCentavos } from '@/lib/formato';
-import { enTauri } from '@/lib/storage';
 import { cn } from '@/lib/utils';
 
-const MIN_CARACTERES = 3; // el sitio no busca con menos
-
-const pesos = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-type Estado =
-  | { tipo: 'inicio' }
-  | { tipo: 'buscando' }
-  | { tipo: 'sin-sesion' }
-  | { tipo: 'error'; mensaje: string }
-  | { tipo: 'ok'; busqueda: string; resultado: Resultado; pagina: number; cargando: boolean };
+/** Mismos centavos que se cargan al fiar: lo que se ve en pantalla es lo que queda guardado. */
+const enCentavos = (pesos: number) => formatoCentavos(aCentavos(pesos));
 
 const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -54,14 +47,13 @@ const itemDe = (a: Articulo, iva: number): Item => ({
   costo: aCentavos(costoConIva(a.lista, a.bonif, iva)),
 });
 
-const abrirPagina = (codigo: string) => abrirCba(codigo).catch((e: unknown) => toast.error('No se pudo abrir la página', { description: mensaje(e) }));
-
-export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
+export function Repuestos({ proveedor: p, irAFiados, irAConfig }: { proveedor: Proveedor; irAFiados: () => void; irAConfig: () => void }) {
+  const abrirPagina = (a: Articulo) => void p.abrir(a).catch((e: unknown) => toast.error('No se pudo abrir la página', { description: mensaje(e) }));
   const { config } = useConfig();
   const { fiados, armado, setArmado, agregarAlArmado, setPedirArmado } = useFiados();
   const clienteArmado = fiados?.clientes.find((c) => c.id === armado.clienteId);
 
-  // Sólo local: nunca toca el carrito ni los pedidos de la cuenta en Córdoba Motos.
+  // Sólo local: nunca toca el carrito ni los pedidos de la cuenta en el proveedor.
   const fiar = (a: Articulo) => {
     agregarAlArmado(itemDe(a, iva));
     toast.success('Agregado al fiado', { description: a.detalle, duration: 2500 });
@@ -71,65 +63,47 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
     setPedirArmado(true);
     irAFiados();
   };
-  const iva = config.ivaProveedores.cba ?? IVA_POR_DEFECTO;
+  const iva = config.ivaProveedores[p.id] ?? IVA_POR_DEFECTO;
   const [texto, setTexto] = useState('');
-  const [estado, setEstado] = useState<Estado>({ tipo: 'inicio' });
   const [ficha, setFicha] = useState<Articulo | null>(null);
-  const ultima = useRef('');
-  // Descarta respuestas de pedidos viejos si el usuario ya pidió otra cosa.
-  const turno = useRef(0);
-
-  const buscar = async (busqueda: string) => {
-    const t = ++turno.current;
-    ultima.current = busqueda;
-    setEstado({ tipo: 'buscando' });
-    try {
-      const resultado = await buscarCba(busqueda);
-      if (t === turno.current) setEstado({ tipo: 'ok', busqueda, resultado, pagina: 1, cargando: false });
-    } catch (e) {
-      if (t === turno.current) setEstado(e instanceof SinSesion ? { tipo: 'sin-sesion' } : { tipo: 'error', mensaje: mensaje(e) });
-    }
-  };
-
-  const accion = async (a: Accion) => {
-    if (estado.tipo !== 'ok' || estado.cargando) return;
-    const t = ++turno.current;
-    const pagina = a.tipo === 'siguiente' ? estado.pagina + 1 : a.tipo === 'anterior' ? estado.pagina - 1 : 1;
-    setEstado({ ...estado, cargando: true });
-    try {
-      const resultado = await accionCba(a);
-      if (t === turno.current) setEstado({ ...estado, resultado, pagina, cargando: false });
-    } catch (e) {
-      if (t !== turno.current) return;
-      if (e instanceof SinSesion) return setEstado({ tipo: 'sin-sesion' });
-      setEstado({ ...estado, cargando: false });
-      toast.error('No se pudo cargar', { description: mensaje(e) });
-    }
-  };
-
-  // Al cerrarse la ventana de login se repite la última búsqueda con la sesión nueva.
-  useEffect(() => {
-    if (!enTauri) return;
-    const quitar = listen('cba-sesion', () => {
-      if (ultima.current) void buscar(ultima.current);
-    });
-    return () => void quitar.then((f) => f());
-  }, []);
+  const [verCosto, setVerCosto] = useState(false);
+  // Código que se está sumando al carrito: de a uno, para no pisar cantidades en el sitio.
+  const [sumando, setSumando] = useState<string | null>(null);
+  const { estado, buscar, accion, mostrarError, ultima } = useBusqueda(p);
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
     const t = texto.trim();
-    if (t.length >= MIN_CARACTERES) void buscar(t);
+    if (t.length >= 2) void buscar(t);
   };
 
-  const abrirLogin = () => loginCba().catch((e: unknown) => setEstado({ tipo: 'error', mensaje: `No se pudo abrir el login: ${String(e)}` }));
+  const abrirLogin = () => p.login().catch((e: unknown) => mostrarError(`No se pudo abrir el login: ${String(e)}`));
+
+  // Carrito de la cuenta en el sitio del proveedor: no compra, el pedido se confirma en la página.
+  const sumarAlCarrito = async (a: Articulo, cantidad: number) => {
+    if (!p.agregarAlCarrito || sumando) return;
+    setSumando(a.codigo);
+    try {
+      await p.agregarAlCarrito(a, cantidad);
+      toast.success(`Agregado al carrito de ${p.nombreCorto}`, { description: `${cantidad} × ${a.detalle}`, duration: 2500 });
+    } catch (e) {
+      const sinSesion = e instanceof SinSesion || e instanceof LoginFallido;
+      toast.error('No se pudo agregar al carrito', {
+        description: sinSesion ? (e as Error).message || `Hay que iniciar sesión en ${p.nombreCorto}.` : mensaje(e),
+        action: sinSesion ? { label: 'Entrar a mano', onClick: () => void abrirLogin() } : undefined,
+      });
+    } finally {
+      setSumando(null);
+    }
+  };
+  const alCarrito = p.agregarAlCarrito && ((a: Articulo, cantidad = 1) => void sumarAlCarrito(a, cantidad));
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="px-8 pt-7 pb-5">
         <h1 className="text-[22px] font-bold tracking-tight">Precios de repuestos</h1>
         <p className="mt-0.5 text-sm text-tinta-gris">
-          Córdoba Motos · costo con la bonificación de la cuenta y venta a lista, ambos con IVA {iva.toLocaleString('es-AR')} % sumado. El IVA se cambia en Configuración → Proveedores.
+          {p.nombreCorto} · IVA {iva.toLocaleString('es-AR')} %
         </p>
       </header>
 
@@ -138,39 +112,31 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
           <form onSubmit={enviar} className="mb-5 flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-tinta-gris" />
-              <Input
-                value={texto}
-                onChange={(e) => setTexto(e.target.value)}
-                placeholder="Palabras, código o código de barras. Ej.: pastilla freno wave"
-                aria-label="Buscar repuesto"
-                className="h-10 pl-9"
-                autoFocus
-              />
+              <Input value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="Buscar repuesto" className="h-10 pl-9" autoFocus />
             </div>
-            <Button type="submit" className="h-10 px-5" disabled={texto.trim().length < MIN_CARACTERES || estado.tipo === 'buscando'}>
+            <Button type="submit" className="h-10 px-5" disabled={texto.trim().length < 2 || estado.tipo === 'buscando'}>
               {estado.tipo === 'buscando' ? <LoaderCircle className="animate-spin" /> : <Search />} Buscar
             </Button>
           </form>
 
-          {estado.tipo === 'inicio' && (
-            <EstadoVacio icono={PackageSearch} titulo="Buscá un repuesto">
-              Escribí al menos {MIN_CARACTERES} letras: una descripción, el código del proveedor o el código de barras.
-            </EstadoVacio>
-          )}
-
-          {estado.tipo === 'buscando' && <p className="py-10 text-center text-sm text-tinta-gris">Buscando en Córdoba Motos…</p>}
+          {estado.tipo === 'buscando' && <p className="py-10 text-center text-sm text-tinta-gris">Buscando en {p.nombreCorto}…</p>}
 
           {estado.tipo === 'sin-sesion' && (
             <EstadoVacio
-              icono={LogIn}
-              titulo="Hay que iniciar sesión en Córdoba Motos"
+              icono={estado.rechazo ? KeyRound : LogIn}
+              titulo={estado.rechazo ? `No se pudo entrar solo a ${p.nombreCorto}` : `Hay que iniciar sesión en ${p.nombreCorto}`}
               accion={
-                <Button onClick={abrirLogin}>
-                  <LogIn /> Iniciar sesión
-                </Button>
+                <div className="flex gap-2">
+                  <Button onClick={abrirLogin}>
+                    <LogIn /> Entrar a mano
+                  </Button>
+                  <Button variant="outline" onClick={irAConfig}>
+                    <Settings2 /> {estado.rechazo ? 'Revisar la cuenta' : 'Guardar la cuenta'}
+                  </Button>
+                </div>
               }
             >
-              Se abre la página del proveedor en otra ventana. Al entrar, se cierra sola y se repite la búsqueda. La app no guarda la contraseña.
+              {estado.rechazo && <span className="mb-2 block font-semibold text-tinta">{estado.rechazo}</span>}
             </EstadoVacio>
           )}
 
@@ -179,8 +145,8 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
               icono={TriangleAlert}
               titulo="No se pudo buscar"
               accion={
-                ultima.current && (
-                  <Button variant="outline" onClick={() => void buscar(ultima.current)}>
+                ultima && (
+                  <Button variant="outline" onClick={() => void buscar(ultima)}>
                     Reintentar
                   </Button>
                 )
@@ -196,7 +162,19 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
                 No se encontró nada para «{estado.busqueda}».
               </EstadoVacio>
             ) : (
-              <Listado estado={estado} iva={iva} onAccion={(a) => void accion(a)} onFicha={setFicha} onFiar={fiar} />
+              <Listado
+                estado={estado}
+                iva={iva}
+                conOrden={!!p.accion}
+                verCosto={verCosto}
+                onVerCosto={() => setVerCosto((v) => !v)}
+                sumando={sumando}
+                onAccion={(a) => void accion(a)}
+                onFicha={setFicha}
+                onFiar={fiar}
+                onCarrito={alCarrito}
+                onAbrir={abrirPagina}
+              />
             ))}
         </div>
       </div>
@@ -205,8 +183,8 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
         <div className="flex items-center gap-4 border-t border-gris-plano bg-papel-alto px-8 py-3" role="region" aria-label="Fiado en armado">
           <HandCoins className="size-5 shrink-0 text-naranja" />
           <p className="min-w-0 flex-1 text-sm">
-            <span className="font-semibold">Fiado{clienteArmado ? ` para ${clienteArmado.nombre}` : ''}:</span>{' '}
-            {armado.items.reduce((a, i) => a + i.cantidad, 0)} {armado.items.reduce((a, i) => a + i.cantidad, 0) === 1 ? 'artículo' : 'artículos'} ·{' '}
+            <span className="font-semibold">Fiado{clienteArmado ? ` para ${clienteArmado.nombre}` : ''}:</span> {armado.items.reduce((a, i) => a + i.cantidad, 0)}{' '}
+            {armado.items.reduce((a, i) => a + i.cantidad, 0) === 1 ? 'artículo' : 'artículos'} ·{' '}
             <span className="tabular font-semibold">{formatoCentavos(totalItems(armado.items))}</span>
           </p>
           <Button variant="ghost" size="sm" onClick={() => setArmado(ARMADO_VACIO)}>
@@ -216,7 +194,17 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
         </div>
       )}
 
-      <FichaArticulo articulo={ficha} iva={iva} onCerrar={() => setFicha(null)} onFiar={fiar} />
+      <FichaArticulo
+        proveedor={p}
+        articulo={ficha}
+        iva={iva}
+        verCosto={verCosto}
+        sumando={sumando}
+        onCerrar={() => setFicha(null)}
+        onFiar={fiar}
+        onCarrito={alCarrito}
+        onAbrir={abrirPagina}
+      />
     </div>
   );
 }
@@ -224,15 +212,27 @@ export function Repuestos({ irAFiados }: { irAFiados: () => void }) {
 function Listado({
   estado,
   iva,
+  conOrden,
+  verCosto,
+  onVerCosto,
+  sumando,
   onAccion,
   onFicha,
   onFiar,
+  onCarrito,
+  onAbrir,
 }: {
   estado: Extract<Estado, { tipo: 'ok' }>;
   iva: number;
+  conOrden: boolean;
+  verCosto: boolean;
+  onVerCosto: () => void;
+  sumando: string | null;
   onAccion: (a: Accion) => void;
   onFicha: (a: Articulo) => void;
   onFiar: (a: Articulo) => void;
+  onCarrito?: (a: Articulo) => void;
+  onAbrir: (a: Articulo) => void;
 }) {
   const { resultado, pagina, cargando } = estado;
   const paginas = Math.max(1, Math.ceil(resultado.total / resultado.porPagina));
@@ -242,19 +242,27 @@ function Listado({
       <div className="mb-3 flex items-center justify-between gap-3">
         <p className="text-sm text-tinta-gris">
           {resultado.total.toLocaleString('es-AR')} {resultado.total === 1 ? 'artículo' : 'artículos'}
+          {!conOrden && resultado.total > resultado.articulos.length && ` · se muestran los primeros ${resultado.articulos.length}, afiná la búsqueda`}
         </p>
-        <Select value={String(resultado.orden)} onValueChange={(v) => onAccion({ tipo: 'orden', valor: Number(v) })} disabled={cargando}>
-          <SelectTrigger className="w-48" aria-label="Ordenar por">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {ORDENES.map(([valor, nombre]) => (
-              <SelectItem key={valor} value={String(valor)}>
-                {nombre}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={onVerCosto} aria-pressed={verCosto} title={verCosto ? 'Ocultar el costo' : 'Ver el costo'}>
+            {verCosto ? <EyeOff /> : <Eye />} Costo
+          </Button>
+          {conOrden && (
+            <Select value={String(resultado.orden)} onValueChange={(v) => onAccion({ tipo: 'orden', valor: Number(v) })} disabled={cargando}>
+              <SelectTrigger className="w-48" aria-label="Ordenar por">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ORDENES.map(([valor, nombre]) => (
+                  <SelectItem key={valor} value={String(valor)}>
+                    {nombre}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
       </div>
 
       <Card className={cn('py-2 transition-opacity', cargando && 'pointer-events-none opacity-50')} aria-busy={cargando}>
@@ -265,11 +273,10 @@ function Listado({
                 <TableHead className="w-24" />
                 <TableHead>Artículo</TableHead>
                 <TableHead>Stock</TableHead>
-                <TableHead className="text-right">Lista s/IVA</TableHead>
-                <TableHead className="text-right">Bonif.</TableHead>
-                <TableHead className="text-right">Costo c/IVA</TableHead>
+                {verCosto && <TableHead className="text-right">Bonif.</TableHead>}
+                {verCosto && <TableHead className="text-right">Costo c/IVA</TableHead>}
                 <TableHead className="text-right">Venta c/IVA</TableHead>
-                <TableHead className="w-24" />
+                <TableHead className="w-32" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -287,18 +294,15 @@ function Listado({
                   </TableCell>
                   <TableCell className="min-w-72 whitespace-normal">
                     <p className="font-medium">{a.detalle}</p>
-                    <p className="tabular mt-0.5 text-xs text-tinta-gris">
-                      {[a.codigo, a.unidad, a.empaque && `Empaque: ${a.empaque}`].filter(Boolean).join(' · ')}
-                    </p>
+                    <p className="tabular mt-0.5 text-xs text-tinta-gris">{[a.codigo, a.unidad, a.empaque && `Empaque: ${a.empaque}`].filter(Boolean).join(' · ')}</p>
                     {a.infoAdicional && <p className="mt-1 line-clamp-2 font-texto text-xs text-tinta-media">{a.infoAdicional}</p>}
                   </TableCell>
                   <TableCell>
                     <Stock articulo={a} />
                   </TableCell>
-                  <TableCell className="tabular text-right text-tinta-media">{pesos.format(a.lista)}</TableCell>
-                  <TableCell className="tabular text-right text-tinta-media">{a.bonif.toLocaleString('es-AR')} %</TableCell>
-                  <TableCell className="tabular text-right text-tinta-media">{pesos.format(costoConIva(a.lista, a.bonif, iva))}</TableCell>
-                  <TableCell className="tabular text-right text-base font-semibold">{pesos.format(precioConIva(a.lista, iva))}</TableCell>
+                  {verCosto && <TableCell className="tabular text-right text-tinta-media">{a.bonif.toLocaleString('es-AR')} %</TableCell>}
+                  {verCosto && <TableCell className="tabular text-right text-tinta-media">{enCentavos(costoConIva(a.lista, a.bonif, iva))}</TableCell>}
+                  <TableCell className="tabular text-right text-base font-semibold">{enCentavos(precioConIva(a.lista, iva))}</TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button
                       variant="ghost"
@@ -312,12 +316,27 @@ function Listado({
                     >
                       <HandCoins />
                     </Button>
+                    {onCarrito && a.carrito && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        disabled={sumando !== null}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onCarrito(a);
+                        }}
+                        aria-label={`Agregar ${a.detalle} al carrito`}
+                        title="Agregar 1 al carrito"
+                      >
+                        {sumando === a.codigo ? <LoaderCircle className="animate-spin" /> : <ShoppingCart />}
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={(e) => {
                         e.stopPropagation();
-                        void abrirPagina(a.codigo);
+                        onAbrir(a);
                       }}
                       aria-label="Abrir en la página"
                       title="Abrir en la página"
@@ -332,7 +351,7 @@ function Listado({
         </CardContent>
       </Card>
 
-      {paginas > 1 && (
+      {conOrden && paginas > 1 && (
         <div className="mt-4 flex items-center justify-center gap-3">
           <Button variant="outline" onClick={() => onAccion({ tipo: 'anterior' })} disabled={cargando || pagina <= 1}>
             <ChevronLeft /> Anterior
@@ -360,20 +379,42 @@ function Stock({ articulo }: { articulo: Articulo }) {
   return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap', clase)}>{texto}</span>;
 }
 
-function FichaArticulo({ articulo, iva, onCerrar, onFiar }: { articulo: Articulo | null; iva: number; onCerrar: () => void; onFiar: (a: Articulo) => void }) {
+function FichaArticulo({
+  proveedor: p,
+  articulo,
+  iva,
+  verCosto,
+  sumando,
+  onCerrar,
+  onFiar,
+  onCarrito,
+  onAbrir,
+}: {
+  proveedor: Proveedor;
+  articulo: Articulo | null;
+  iva: number;
+  verCosto: boolean;
+  sumando: string | null;
+  onCerrar: () => void;
+  onFiar: (a: Articulo) => void;
+  onCarrito?: (a: Articulo, cantidad: number) => void;
+  onAbrir: (a: Articulo) => void;
+}) {
+  const [cantidad, setCantidad] = useState(1);
+  useEffect(() => setCantidad(1), [articulo]);
   const [ficha, setFicha] = useState<Ficha | 'cargando' | 'sin-sesion' | { error: string }>('cargando');
 
   useEffect(() => {
-    if (!articulo) return;
+    if (!articulo || !p.ficha) return;
     let vigente = true;
     setFicha('cargando');
-    fichaCba(articulo.codigo)
+    p.ficha(articulo.codigo)
       .then((f) => vigente && setFicha(f))
       .catch((e: unknown) => vigente && setFicha(e instanceof SinSesion ? 'sin-sesion' : { error: mensaje(e) }));
     return () => {
       vigente = false;
     };
-  }, [articulo]);
+  }, [articulo, p]);
 
   return (
     <Dialog open={articulo !== null} onOpenChange={(v) => !v && onCerrar()}>
@@ -396,45 +437,64 @@ function FichaArticulo({ articulo, iva, onCerrar, onFiar }: { articulo: Articulo
                 </div>
 
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                  <dt className="text-tinta-gris">Lista s/IVA</dt>
-                  <dd className="tabular text-right">{pesos.format(articulo.lista)}</dd>
-                  <dt className="text-tinta-gris">Bonificación</dt>
-                  <dd className="tabular text-right">{articulo.bonif.toLocaleString('es-AR')} %</dd>
-                  <dt className="text-tinta-gris">Costo c/IVA</dt>
-                  <dd className="tabular text-right">{pesos.format(costoConIva(articulo.lista, articulo.bonif, iva))}</dd>
+                  {verCosto && (
+                    <>
+                      <dt className="text-tinta-gris">Bonificación</dt>
+                      <dd className="tabular text-right">{articulo.bonif.toLocaleString('es-AR')} %</dd>
+                      <dt className="text-tinta-gris">Costo c/IVA</dt>
+                      <dd className="tabular text-right">{enCentavos(costoConIva(articulo.lista, articulo.bonif, iva))}</dd>
+                    </>
+                  )}
                   <dt className="font-medium">Venta c/IVA {iva.toLocaleString('es-AR')} %</dt>
-                  <dd className="tabular text-right text-base font-semibold">{pesos.format(precioConIva(articulo.lista, iva))}</dd>
+                  <dd className="tabular text-right text-base font-semibold">{enCentavos(precioConIva(articulo.lista, iva))}</dd>
                 </dl>
 
                 {articulo.infoAdicional && <p className="font-texto text-sm whitespace-pre-line text-tinta-media">{articulo.infoAdicional}</p>}
 
-                <div>
-                  <p className="mb-1.5 text-sm font-semibold">Características</p>
-                  {ficha === 'cargando' ? (
-                    <LoaderCircle className="size-4 animate-spin text-tinta-gris" />
-                  ) : ficha === 'sin-sesion' ? (
-                    <p className="text-sm text-tinta-gris">Hay que iniciar sesión en Córdoba Motos.</p>
-                  ) : 'error' in ficha ? (
-                    <p className="text-sm text-error">{ficha.error}</p>
-                  ) : ficha.caracteristicas.length === 0 ? (
-                    <p className="text-sm text-tinta-gris">El sitio no informa características.</p>
-                  ) : (
-                    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-                      {ficha.caracteristicas.map(([nombre, valor]) => (
-                        <div key={nombre + valor} className="contents">
-                          <dt className="text-tinta-gris">{nombre}</dt>
-                          <dd>{valor}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  )}
-                </div>
+                {p.ficha && (
+                  <div>
+                    <p className="mb-1.5 text-sm font-semibold">Características</p>
+                    {ficha === 'cargando' ? (
+                      <LoaderCircle className="size-4 animate-spin text-tinta-gris" />
+                    ) : ficha === 'sin-sesion' ? (
+                      <p className="text-sm text-tinta-gris">Hay que iniciar sesión en {p.nombreCorto}.</p>
+                    ) : 'error' in ficha ? (
+                      <p className="text-sm text-error">{ficha.error}</p>
+                    ) : ficha.caracteristicas.length === 0 ? (
+                      <p className="text-sm text-tinta-gris">El sitio no informa características.</p>
+                    ) : (
+                      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+                        {ficha.caracteristicas.map(([nombre, valor]) => (
+                          <div key={nombre + valor} className="contents">
+                            <dt className="text-tinta-gris">{nombre}</dt>
+                            <dd>{valor}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex flex-wrap gap-2">
                   <Button onClick={() => onFiar(articulo)}>
                     <HandCoins /> Fiar
                   </Button>
-                  <Button variant="outline" onClick={() => void abrirPagina(articulo.codigo)}>
+                  {onCarrito && articulo.carrito && (
+                    <div className="flex">
+                      <Input
+                        type="number"
+                        min={1}
+                        value={cantidad}
+                        onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                        aria-label="Cantidad para el carrito"
+                        className="h-9 w-16 rounded-r-none text-center"
+                      />
+                      <Button variant="outline" className="rounded-l-none border-l-0" disabled={sumando !== null} onClick={() => onCarrito(articulo, cantidad)}>
+                        {sumando === articulo.codigo ? <LoaderCircle className="animate-spin" /> : <ShoppingCart />} Al carrito
+                      </Button>
+                    </div>
+                  )}
+                  <Button variant="outline" onClick={() => onAbrir(articulo)}>
                     <ExternalLink /> Abrir en la página
                   </Button>
                 </div>

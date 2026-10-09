@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfig } from '@/lib/config';
-import { csvClientes, diaDe, formatoDia, resumen, sinTildes, totalItems, type Cliente, type Cuenta } from '@/lib/fiados';
+import { csvClientes, diaDe, formatoDia, resumen, totalItems, type Cliente, type Cuenta } from '@/lib/fiados';
 import { ARMADO_VACIO, useFiados } from '@/lib/fiados-store';
-import { fechaCompacta, formatoCentavos } from '@/lib/formato';
-import { enTauri, guardarCsv } from '@/lib/storage';
+import { fechaCompacta, formatoCentavos, sinTildes } from '@/lib/formato';
+import { guardarCsv } from '@/lib/archivos';
+import { enTauri } from '@/lib/entorno';
 import { cn } from '@/lib/utils';
 import { ClienteDetalle } from './Cliente';
 import { Antiguedad, avisarWhatsapp, Dato, mensaje, Saldo } from './comun';
@@ -34,6 +35,16 @@ const ORDENES: [Orden, string][] = [
   ['nombre', 'Nombre'],
   ['pago', 'Pago más viejo'],
 ];
+
+type Fila = { c: Cliente; k: Cuenta };
+const porNombre = (a: Cliente, b: Cliente) => a.nombre.localeCompare(b.nombre, 'es');
+/** Un comparador por orden: agregar uno es sumar una línea acá y otra en ORDENES. */
+const COMPARADORES: Record<Orden, (x: Fila, y: Fila) => number> = {
+  saldo: (x, y) => y.k.saldo - x.k.saldo || porNombre(x.c, y.c),
+  antiguedad: (x, y) => (y.k.antiguedad ?? -1) - (x.k.antiguedad ?? -1) || porNombre(x.c, y.c),
+  pago: (x, y) => (x.k.ultimoPago ?? '').localeCompare(y.k.ultimoPago ?? '') || porNombre(x.c, y.c),
+  nombre: (x, y) => porNombre(x.c, y.c),
+};
 
 export function Fiados({ irARepuestos }: { irARepuestos: () => void }) {
   const { config } = useConfig();
@@ -70,16 +81,7 @@ export function Fiados({ irARepuestos }: { irARepuestos: () => void }) {
     const lista = fiados.clientes
       .map((c) => ({ c, k: r.cuentas.get(c.id)! }))
       .filter(({ c, k }) => (q ? sinTildes(`${c.nombre} ${c.telefono} ${c.dni} ${c.referencia}`).includes(q) : f.cumple(c, k)));
-    const porNombre = (a: Cliente, b: Cliente) => a.nombre.localeCompare(b.nombre, 'es');
-    return lista.sort(({ c: a, k: x }, { c: b, k: y }) =>
-      orden === 'saldo'
-        ? y.saldo - x.saldo || porNombre(a, b)
-        : orden === 'antiguedad'
-          ? (y.antiguedad ?? -1) - (x.antiguedad ?? -1) || porNombre(a, b)
-          : orden === 'pago'
-            ? (x.ultimoPago ?? '').localeCompare(y.ultimoPago ?? '') || porNombre(a, b)
-            : porNombre(a, b),
-    );
+    return lista.sort(COMPARADORES[orden]);
   }, [fiados, r, filtro, busqueda, orden]);
 
   const exportar = async () => {

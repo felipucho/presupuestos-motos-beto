@@ -17,8 +17,10 @@ import { calcularPresupuesto, lineaContado, lineaPlan } from '@/lib/calculos';
 import { useConfig } from '@/lib/config';
 import { etiquetaPlan, finDeMes, formatoMoneda, formatoNumero, nombreArchivo, numeroPresupuesto } from '@/lib/formato';
 import { nuevoId, type Config, type Moto, type Vendedor } from '@/lib/schema';
-import { abrirArchivo, enTauri, guardarPdf } from '@/lib/storage';
+import { abrirArchivo, guardarPdf } from '@/lib/archivos';
+import { enTauri } from '@/lib/entorno';
 import { agregarRegistro } from '@/lib/historial';
+import { altasCatalogo, mensajeAltas } from '@/lib/presupuesto';
 import { generarPdf } from '@/pdf/generar';
 import type { DatosPresupuesto, HojaMoto } from '@/pdf/PresupuestoPDF';
 import { cn } from '@/lib/utils';
@@ -222,36 +224,15 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
         archivo: ruta,
       }).catch((e: unknown) => toast.error('El PDF se guardó, pero no se pudo anotar en el historial', { description: String(e), duration: Infinity }));
       // «Otra moto…» con «Guardar en el catálogo»: se agrega, salvo que ya exista con la misma marca, modelo y cilindrada.
-      const clave = (m: Pick<Moto, 'marca' | 'modelo' | 'cilindrada'>) => `${m.marca}|${m.modelo}|${m.cilindrada}`.toLocaleLowerCase('es');
-      const nuevas: Moto[] = [];
-      const elegida: Record<string, string> = {};
-      let repetidas = 0;
-      for (const it of b.motos) {
-        if (it.motoId !== OTRA || !it.guardarEnCatalogo) continue;
-        const nueva: Moto = {
-          id: nuevoId(),
-          marca: it.manual.marca.trim(),
-          modelo: it.manual.modelo.trim(),
-          cilindrada: it.manual.cilindrada.trim(),
-          colores: it.color.trim() ? [it.color.trim()] : [],
-          precioLista: it.precioLista ?? 0,
-          patentamiento: it.patentamiento ?? 0,
-        };
-        const repetida = [...config.motos, ...nuevas].find((m) => clave(m) === clave(nueva));
-        if (repetida && !nuevas.includes(repetida)) repetidas++;
-        if (!repetida) nuevas.push(nueva);
-        elegida[it.key] = (repetida ?? nueva).id;
-      }
+      const altas = b.motos
+        .filter((it) => it.motoId === OTRA && it.guardarEnCatalogo)
+        .map((it) => ({ key: it.key, marca: it.manual.marca, modelo: it.manual.modelo, cilindrada: it.manual.cilindrada, color: it.color, precioLista: it.precioLista, patentamiento: it.patentamiento }));
+      const { nuevas, repetidas, elegida } = altasCatalogo(config.motos, altas, nuevoId);
       if (nuevas.length > 0) actualizar((c) => ({ ...c, motos: [...c.motos, ...nuevas] }), false);
       if (Object.keys(elegida).length > 0) {
         setBorrador((x) => ({ ...x, motos: x.motos.map((it) => (elegida[it.key] ? { ...it, motoId: elegida[it.key] ?? null, guardarEnCatalogo: false } : it)) }));
       }
-      const extra = [
-        nuevas.length === 1 ? 'La moto se agregó al catálogo.' : nuevas.length > 1 ? `Se agregaron ${nuevas.length} motos al catálogo.` : '',
-        repetidas > 0 ? (repetidas === 1 ? 'Una moto ya estaba en el catálogo.' : `${repetidas} motos ya estaban en el catálogo.`) : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
+      const extra = mensajeAltas(nuevas.length, repetidas);
       toast.success('PDF guardado', {
         description: (
           <>
@@ -330,7 +311,7 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
                   <Input id={`manual-modelo${s}`} value={item.manual.modelo} onChange={(e) => setItem(item.key, { manual: { ...item.manual, modelo: e.target.value } })} {...invalido(`manual-modelo${s}`, mostrar[`manual-modelo${s}`])} />
                 </Campo>
                 <Campo id={`manual-cc${s}`} label="Cilindrada" opcional>
-                  <Input id={`manual-cc${s}`} value={item.manual.cilindrada} onChange={(e) => setItem(item.key, { manual: { ...item.manual, cilindrada: e.target.value } })} placeholder="Ej.: 110 cc" />
+                  <Input id={`manual-cc${s}`} value={item.manual.cilindrada} onChange={(e) => setItem(item.key, { manual: { ...item.manual, cilindrada: e.target.value } })} />
                 </Campo>
               </div>
               <label className="flex cursor-pointer items-center justify-between gap-4 rounded-md bg-papel-alto px-3 py-2.5 ring-1 ring-gris-plano">
@@ -378,7 +359,6 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
               id={`observaciones${s}`}
               value={item.observaciones}
               onChange={(e) => setItem(item.key, { observaciones: e.target.value })}
-              placeholder="Ej.: incluye casco de regalo; entrega en 7 días."
               className="min-h-20 resize-y"
             />
           </Campo>

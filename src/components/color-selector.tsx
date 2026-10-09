@@ -15,7 +15,7 @@ export function ColorSelector(props: { id: string; colores: string[]; value: str
   const [agregando, setAgregando] = useState(colores.length === 0);
   const [nuevo, setNuevo] = useState('');
 
-  if (!onAgregar) return <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ej.: Rojo" className="h-10" />;
+  if (!onAgregar) return <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} className="h-10" />;
 
   const confirmar = () => {
     const c = nuevo.trim();
@@ -39,7 +39,7 @@ export function ColorSelector(props: { id: string; colores: string[]; value: str
     };
     return (
       <div className="flex gap-1.5">
-        <Input id={id} value={nuevo} onChange={(e) => setNuevo(e.target.value)} onKeyDown={teclas} placeholder="Nuevo color, ej.: Rojo" className="h-10" autoFocus={colores.length > 0} />
+        <Input id={id} value={nuevo} onChange={(e) => setNuevo(e.target.value)} onKeyDown={teclas} placeholder="Nuevo color" className="h-10" autoFocus={colores.length > 0} />
         <Button type="button" size="icon" className="size-10 shrink-0" onClick={confirmar} disabled={!nuevo.trim()} aria-label="Agregar color" title="Agregar a la moto">
           <Check />
         </Button>

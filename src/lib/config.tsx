@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { cargarConfig, guardarConfig } from './storage';
+import { cargarConfig, guardarConfig } from './config-store';
 import type { Config } from './schema';
 
 type Actualizar = (cambio: (c: Config) => Config, mensaje?: string | false) => void;
@@ -8,7 +8,8 @@ type Actualizar = (cambio: (c: Config) => Config, mensaje?: string | false) => v
 interface Ctx {
   config: Config;
   actualizar: Actualizar;
-  reemplazar: (c: Config) => void;
+  /** Reemplaza toda la configuración y espera a que quede escrita: la promesa falla si el disco falla. */
+  reemplazar: (c: Config) => Promise<void>;
 }
 
 const ConfigCtx = createContext<Ctx | null>(null);
@@ -36,15 +37,10 @@ export function ConfigProvider({ children, fallback }: { children: ReactNode; fa
       .catch((e: unknown) => setErrorCarga(String(e)));
   }, []);
 
-  const persistir = useCallback((c: Config, mensaje: string | false) => {
-    cola.current = cola.current
-      .then(() => guardarConfig(c))
-      .then(() => {
-        if (mensaje) toast.success(mensaje);
-      })
-      .catch((e: unknown) => {
-        toast.error('No se pudo guardar la configuración', { description: String(e), duration: Infinity });
-      });
+  const escribir = useCallback((c: Config) => {
+    const p = cola.current.then(() => guardarConfig(c));
+    cola.current = p.catch(() => undefined);
+    return p;
   }, []);
 
   const actualizar = useCallback<Actualizar>(
@@ -55,12 +51,27 @@ export function ConfigProvider({ children, fallback }: { children: ReactNode; fa
       if (next === prev) return;
       actual.current = next;
       setConfig(next);
-      persistir(next, mensaje);
+      escribir(next)
+        .then(() => {
+          if (mensaje) toast.success(mensaje);
+        })
+        .catch((e: unknown) => {
+          toast.error('No se pudo guardar la configuración', { description: String(e), duration: Infinity });
+        });
     },
-    [persistir],
+    [escribir],
   );
 
-  const reemplazar = useCallback((c: Config) => actualizar(() => c, 'Configuración importada'), [actualizar]);
+  const reemplazar = useCallback<Ctx['reemplazar']>(
+    (c) => {
+      actual.current = c;
+      setConfig(c);
+      return escribir(c);
+    },
+    [escribir],
+  );
+
+  const value = useMemo(() => (config ? { config, actualizar, reemplazar } : null), [config, actualizar, reemplazar]);
 
   if (errorCarga) {
     return (
@@ -72,6 +83,6 @@ export function ConfigProvider({ children, fallback }: { children: ReactNode; fa
       </div>
     );
   }
-  if (!config) return fallback;
-  return <ConfigCtx.Provider value={{ config, actualizar, reemplazar }}>{children}</ConfigCtx.Provider>;
+  if (!value) return fallback;
+  return <ConfigCtx.Provider value={value}>{children}</ConfigCtx.Provider>;
 }

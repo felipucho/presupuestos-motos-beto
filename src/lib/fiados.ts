@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { redondear } from './calculos';
-import { enlaceWhatsapp, formatoCentavos } from './formato';
+import { enlaceWhatsapp, formatoCentavos, sinTildes } from './formato';
 
 // Todos los montos de los fiados van en centavos enteros: sumar pesos con decimales acumula error.
 
@@ -137,7 +137,11 @@ export function cuenta(movimientos: readonly Movimiento[], hoy: string): Cuenta 
 /** Movimientos agrupados por cliente. */
 export function porCliente(movimientos: readonly Movimiento[]): Map<string, Movimiento[]> {
   const m = new Map<string, Movimiento[]>();
-  for (const x of movimientos) m.set(x.clienteId, [...(m.get(x.clienteId) ?? []), x]);
+  for (const x of movimientos) {
+    const lista = m.get(x.clienteId);
+    if (lista) lista.push(x);
+    else m.set(x.clienteId, [x]);
+  }
   return m;
 }
 
@@ -174,7 +178,6 @@ export function saldosCorridos(movimientos: readonly Movimiento[]): Map<string, 
   );
 }
 
-export const sinTildes = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim();
 const digitos = (t: string) => t.replace(/\D/g, '');
 
 /** Clientes que parecen la misma persona: mismo nombre, mismo DNI o mismo teléfono. */
@@ -190,8 +193,10 @@ export function parecidos(clientes: readonly Cliente[], c: Pick<Cliente, 'id' | 
   );
 }
 
-/** Pasa los movimientos de un cliente a otro y saca al primero. */
+/** Pasa los movimientos de un cliente a otro y saca al primero. Sin efecto si es el mismo o alguno no existe. */
 export function unir(f: Fiados, desde: string, hacia: string): Fiados {
+  const existe = (id: string) => f.clientes.some((c) => c.id === id);
+  if (desde === hacia || !existe(desde) || !existe(hacia)) return f;
   return {
     clientes: f.clientes.filter((c) => c.id !== desde),
     movimientos: f.movimientos.map((m) => (m.clienteId === desde ? { ...m, clienteId: hacia } : m)),
@@ -204,7 +209,8 @@ export const quitarDevueltos = (items: readonly Item[], devueltos: readonly numb
 
 /** Suma un ítem a la lista; si ya está el mismo código al mismo precio, suma la cantidad. */
 export function sumarItem(items: readonly Item[], nuevo: Item): Item[] {
-  const i = nuevo.codigo ? items.findIndex((x) => x.codigo === nuevo.codigo && x.precio === nuevo.precio) : -1;
+  // El código es de cada proveedor: dos artículos distintos pueden tener el mismo código y precio.
+  const i = nuevo.codigo ? items.findIndex((x) => x.codigo === nuevo.codigo && x.detalle === nuevo.detalle && x.precio === nuevo.precio) : -1;
   if (i === -1) return [...items, nuevo];
   return items.map((x, n) => (n === i ? { ...x, cantidad: Math.min(9999, x.cantidad + nuevo.cantidad) } : x));
 }
@@ -225,7 +231,9 @@ export function enlaceMensaje(telefono: string, mensaje: string): string | null 
   return url && `${url}?text=${encodeURIComponent(mensaje)}`;
 }
 
-const celda = (t: string) => (/[";\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
+const celda = (t: string) => (/[";\r\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t);
+/** Excel tomaría como fórmula un texto que empieza con = + - @ o tab: se le pone un apóstrofe adelante. */
+const textoSeguro = (t: string) => (/^[=+\-@\t\r]/.test(t) ? `'${t}` : t);
 const numeroCsv = (c: number) => (c / 100).toFixed(2).replace('.', ',');
 
 /** CSV para Excel en castellano: separado por punto y coma, coma decimal y BOM para los acentos. */
@@ -234,9 +242,10 @@ export function csvClientes(clientes: readonly Cliente[], cuentas: Map<string, C
   for (const c of clientes) {
     const k = cuentas.get(c.id);
     filas.push([
-      c.nombre,
+      textoSeguro(c.nombre),
+      // Sin apóstrofe en el teléfono: "+54…" es normal y el apóstrofe quedaría visible.
       c.telefono,
-      c.dni,
+      textoSeguro(c.dni),
       numeroCsv(k?.saldo ?? 0),
       k?.antiguedad == null ? '' : String(k.antiguedad),
       k?.ultimoPago ? formatoDia(k.ultimoPago) : '',

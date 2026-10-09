@@ -36,5 +36,12 @@ describe('formato', () => {
     expect(parsearDecimal('12,5')).toBe(12.5);
     expect(parsearDecimal('-3')).toBe(-3);
     expect(parsearDecimal('abc')).toBeNaN();
+    // Punto de miles: antes «1.500» se leía como 1,5 y cobraba un monto 1000 veces menor.
+    expect(parsearDecimal('1.500')).toBe(1500);
+    expect(parsearDecimal('1.500.000')).toBe(1500000);
+    expect(parsearDecimal('1.500,5')).toBe(1500.5);
+    expect(parsearDecimal('1.5')).toBe(1.5);
+    expect(parsearDecimal('1,5')).toBe(1.5);
+    expect(parsearPesos('12345678901234567890')).toBeNull();
   });
 });

@@ -11,15 +11,22 @@ const conCentavos = new Intl.NumberFormat('es-AR', { style: 'currency', currency
 /** $ 7.575,31 a partir de centavos enteros. */
 export const formatoCentavos = (c: number) => conCentavos.format(c / 100);
 
-/** Sólo los dígitos de lo que se tipeó, como entero en pesos. null si está vacío. */
+/** Sólo los dígitos de lo que se tipeó, como entero en pesos. null si está vacío o no entra en un número seguro. */
 export function parsearPesos(texto: string): number | null {
   const d = texto.replace(/\D/g, '');
-  return d ? Number(d.slice(0, 13)) : null;
+  if (!d) return null;
+  const n = Number(d);
+  return Number.isSafeInteger(n) ? n : null;
 }
 
-/** Acepta coma o punto decimal. NaN si no es un número. */
+/**
+ * Número decimal en formato argentino. Un punto seguido de grupos de 3 dígitos es separador de miles
+ * («1.500» y «1.500,5» valen 1500 y 1500,5); la coma es el decimal. NaN si no es un número.
+ */
 export function parsearDecimal(texto: string): number {
-  const t = texto.trim().replace(',', '.');
+  let t = texto.trim();
+  if (/^-?\d{1,3}(\.\d{3})+(,\d*)?$/.test(t)) t = t.replace(/\./g, '');
+  t = t.replace(',', '.');
   return t === '' || !/^-?\d*\.?\d*$/.test(t) ? NaN : Number(t);
 }
 
@@ -41,6 +48,9 @@ export function enlaceWhatsapp(telefono: string): string | null {
   else if (d.startsWith('0')) d = d.slice(1);
   return d.length === 10 ? `https://wa.me/549${d}` : null;
 }
+
+/** Minúsculas, sin tildes ni espacios sobrantes: para comparar y buscar texto tipeado a mano. */
+export const sinTildes = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim();
 
 /** AAAAMMDD en hora local. */
 export const fechaCompacta = (d: Date) => `${d.getFullYear()}${dos(d.getMonth() + 1)}${dos(d.getDate())}`;

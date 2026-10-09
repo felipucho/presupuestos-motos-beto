@@ -1,3 +1,4 @@
+import { sinTildes } from './formato';
 import type { Registro } from './historial';
 
 export type Periodo = 'dia' | 'semana' | 'mes' | 'trimestre' | 'anio' | 'todo';
@@ -100,13 +101,7 @@ export function tramos(p: Periodo, ref: Date, primero: Date | null, hoy: Date): 
 }
 
 /** Misma persona aunque cambien mayúsculas, tildes o espacios. */
-const claveCliente = (nombre: string) =>
-  nombre
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLocaleLowerCase('es')
-    .replace(/\s+/g, ' ')
-    .trim();
+const claveCliente = sinTildes;
 
 export interface Metricas {
   presupuestos: number;

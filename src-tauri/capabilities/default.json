@@ -14,7 +14,7 @@
     },
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://wa.me/*" }]
+      "allow": [{ "url": "https://wa.me/*" }, { "url": "https://neumatmotos.com.ar/*" }, { "url": "https://ventas.fundasparamotosab.com.ar/*" }, { "url": "https://changomax.mercomaxsa.com.ar/*" }]
     },
     {
       "identifier": "fs:allow-write-file",

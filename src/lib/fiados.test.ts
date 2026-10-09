@@ -106,6 +106,7 @@ it('ítems: sumar el mismo código suma cantidad; devolver saca unidades', () =>
   expect(lista).toEqual([item(100, 3)]);
   expect(sumarItem(lista, item(200))).toHaveLength(2);
   expect(sumarItem(lista, { ...item(100), codigo: '' })).toHaveLength(2);
+  expect(sumarItem(lista, { ...item(100), detalle: 'Otro artículo' })).toHaveLength(2);
   expect(quitarDevueltos([item(100, 3), item(50, 1)], [1, 1])).toEqual([item(100, 2)]);
   expect(quitarDevueltos([item(100, 1)], [5])).toEqual([]);
 });
@@ -139,4 +140,24 @@ it('valida movimientos: monto 0 o cargo sin ítems no pasan', () => {
   expect(movimientoSchema.safeParse(ajuste('2026-01-01', 0)).success).toBe(false);
   expect(movimientoSchema.safeParse({ ...cargo('2026-01-01', 100), items: [] }).success).toBe(false);
   expect(movimientoSchema.safeParse({ ...pago('2026-01-01', 100), fecha: '01/01/2026' }).success).toBe(false);
+});
+
+it('unir no hace nada si es el mismo cliente o alguno no existe', () => {
+  const f = { clientes: [cliente('c1', 'A'), cliente('c2', 'B')], movimientos: [] };
+  expect(unir(f, 'c1', 'c1')).toBe(f);
+  expect(unir(f, 'c1', 'fantasma')).toBe(f);
+  expect(unir(f, 'fantasma', 'c2')).toBe(f);
+});
+
+it('csvClientes neutraliza texto que Excel tomaría como fórmula, sin tocar los montos', () => {
+  const csv = csvClientes(
+    [cliente('c1', '=SUMA(1;1)'), cliente('c2', '-Pérez'), cliente('c3', 'Ana', '+5493511234567')],
+    new Map([['c2', { ...cuenta([], '2026-01-01'), saldo: -500 }]]),
+  );
+  expect(csv).toContain(`"'=SUMA(1;1)"`); // el ";" obliga a entrecomillar, y el apóstrofe va adentro
+  expect(csv).toContain(`'-Pérez`);
+  expect(csv).toContain('+5493511234567;'); // el teléfono sale tal cual
+  expect(csv).not.toContain(`'+54`);
+  expect(csv).toContain('-5,00'); // el saldo a favor sale como número, sin apóstrofe
+  expect(csv).not.toContain(`'-5,00`);
 });

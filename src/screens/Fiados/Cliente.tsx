@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfig } from '@/lib/config';
 import { cuenta, diaDe, formatoDia, importe, saldosCorridos, type Cargo, type Movimiento } from '@/lib/fiados';
+import { quitarPor } from '@/lib/listas';
 import { useFiados } from '@/lib/fiados-store';
 import { formatoCentavos } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -276,7 +277,7 @@ export function ClienteDetalle({ id, onVolver, onCargar, onAbrir }: { id: string
         titulo="¿Borrar el cliente?"
         accion="Borrar"
         peligro
-        onConfirmar={() => cambiar((x) => ({ ...x, clientes: x.clientes.filter((c) => c.id !== id) }), 'Cliente borrado')}
+        onConfirmar={() => cambiar((x) => ({ ...x, clientes: quitarPor(x.clientes, id) }), 'Cliente borrado')}
       >
         «{cliente.nombre}» no tiene movimientos. Se borra para siempre.
       </Confirmar>

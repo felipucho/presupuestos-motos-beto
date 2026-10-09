@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Bike, CreditCard, DatabaseBackup, Receipt, Store, Truck, UsersRound, type LucideIcon } from 'lucide-react';
+import { Bike, CloudUpload, CreditCard, DatabaseBackup, Receipt, Store, Truck, UsersRound, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Backup } from './Backup';
 import { Catalogo } from './Catalogo';
@@ -7,9 +7,10 @@ import { DatosLocal } from './DatosLocal';
 import { Gastos } from './Gastos';
 import { Pagos } from './Pagos';
 import { Proveedores } from './Proveedores';
+import { Respaldo } from './Respaldo';
 import { Vendedores } from './Vendedores';
 
-type Seccion = 'local' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'proveedores' | 'backup';
+type Seccion = 'local' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'proveedores' | 'backup' | 'respaldo';
 
 const SECCIONES: { id: Seccion; label: string; icono: LucideIcon }[] = [
   { id: 'local', label: 'Datos del local', icono: Store },
@@ -19,6 +20,7 @@ const SECCIONES: { id: Seccion; label: string; icono: LucideIcon }[] = [
   { id: 'catalogo', label: 'Catálogo', icono: Bike },
   { id: 'proveedores', label: 'Proveedores', icono: Truck },
   { id: 'backup', label: 'Backup', icono: DatabaseBackup },
+  { id: 'respaldo', label: 'Respaldo en GitHub', icono: CloudUpload },
 ];
 
 export function Configuracion() {
@@ -59,6 +61,7 @@ export function Configuracion() {
             {seccion === 'catalogo' && <Catalogo />}
             {seccion === 'proveedores' && <Proveedores />}
             {seccion === 'backup' && <Backup />}
+            {seccion === 'respaldo' && <Respaldo />}
           </div>
         </main>
       </div>

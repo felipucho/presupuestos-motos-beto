@@ -18,7 +18,8 @@ import {
 } from '@/lib/fiados';
 import { formatoCentavos, nombreSeguro } from '@/lib/formato';
 import type { Local } from '@/lib/schema';
-import { abrirArchivo, abrirWhatsapp, enTauri, guardarPdf } from '@/lib/storage';
+import { abrirArchivo, abrirWhatsapp, guardarPdf } from '@/lib/archivos';
+import { enTauri } from '@/lib/entorno';
 import { cn } from '@/lib/utils';
 import { generarComprobante, type DatosComprobante } from '@/pdf/ComprobantePDF';
 

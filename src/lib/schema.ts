@@ -16,7 +16,8 @@ export const localSchema = z.object({
     .max(8, 'Máximo 8 caracteres')
     .regex(/^[A-Za-z0-9]+$/, 'Solo letras y números, sin espacios'),
   textoLegal: texto,
-  carpetaPdf: z.string().nullable(),
+  // Con default para leer configuraciones anteriores a este campo.
+  carpetaPdf: z.string().nullable().default(null),
 });
 
 export const planSchema = z.object({

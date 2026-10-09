@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useConfig } from '@/lib/config';
+import { quitarPor, upsertPor } from '@/lib/listas';
 import { enlaceWhatsapp } from '@/lib/formato';
 import { erroresPorCampo, nuevoId, vendedorSchema, type Vendedor } from '@/lib/schema';
 
@@ -74,7 +75,7 @@ export function Vendedores() {
         onCerrar={() => setEditando(null)}
         onGuardar={(v) => {
           const existe = config.vendedores.some((x) => x.id === v.id);
-          actualizar((c) => ({ ...c, vendedores: existe ? c.vendedores.map((x) => (x.id === v.id ? v : x)) : [...c.vendedores, v] }), existe ? 'Vendedor actualizado' : 'Vendedor agregado');
+          actualizar((c) => ({ ...c, vendedores: upsertPor(c.vendedores, v) }), existe ? 'Vendedor actualizado' : 'Vendedor agregado');
           setEditando(null);
         }}
       />
@@ -84,7 +85,7 @@ export function Vendedores() {
         titulo="¿Borrar este vendedor?"
         accion="Borrar vendedor"
         peligro
-        onConfirmar={() => borrando && actualizar((c) => ({ ...c, vendedores: c.vendedores.filter((x) => x.id !== borrando.id) }), 'Vendedor borrado')}
+        onConfirmar={() => borrando && actualizar((c) => ({ ...c, vendedores: quitarPor(c.vendedores, borrando.id) }), 'Vendedor borrado')}
       >
         Se va a quitar <b>{borrando?.nombre}</b> de la lista de vendedores.
       </Confirmar>
@@ -107,6 +108,8 @@ function VendedorDialog(props: { vendedor: Vendedor | 'nuevo' | null; onCerrar: 
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
+    // Con el diálogo ya cerrándose, un segundo envío generaría otro id y duplicaría la fila.
+    if (!props.vendedor) return;
     const r = vendedorSchema.safeParse({ id: id ?? nuevoId(), nombre, telefono });
     if (!r.success) return setErrores(erroresPorCampo(r.error));
     props.onGuardar(r.data);

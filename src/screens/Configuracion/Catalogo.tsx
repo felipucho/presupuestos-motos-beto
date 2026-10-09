@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ajustarPrecio } from '@/lib/calculos';
 import { useConfig } from '@/lib/config';
+import { quitarPor, upsertPor } from '@/lib/listas';
 import { formatoMoneda, formatoNumero } from '@/lib/formato';
 import { erroresPorCampo, motoSchema, nuevoId, type Moto } from '@/lib/schema';
 import { cn } from '@/lib/utils';
@@ -31,14 +32,13 @@ export function Catalogo() {
   const [masiva, setMasiva] = useState(false);
 
   const grupos = useMemo(() => agruparPorMarca(config.motos), [config.motos]);
-  const marcas = grupos.map(([m]) => m);
-  useEffect(() => {
-    if (marca !== TODAS && !marcas.some((m) => m === marca)) setMarca(TODAS);
-  }, [marcas, marca]);
+  const marcas = useMemo(() => grupos.map(([m]) => m), [grupos]);
+  // Si la marca elegida ya no tiene motos, se muestra todo: se deriva en el render, sin efecto.
+  const marcaActiva = marca === TODAS || marcas.includes(marca) ? marca : TODAS;
 
   const q = normal(busqueda.trim());
   const visibles = grupos
-    .filter(([m]) => marca === TODAS || m === marca)
+    .filter(([m]) => marcaActiva === TODAS || m === marcaActiva)
     .map(([m, motos]): [string, Moto[]] => [m, motos.filter((x) => !q || normal(`${x.marca} ${x.modelo} ${x.cilindrada} ${x.colores.join(' ')}`).includes(q))])
     .filter(([, motos]) => motos.length > 0);
 
@@ -87,7 +87,7 @@ export function Catalogo() {
             </button>
           )}
         </div>
-        <Select value={marca} onValueChange={setMarca}>
+        <Select value={marcaActiva} onValueChange={setMarca}>
           <SelectTrigger className="w-52" aria-label="Filtrar por marca">
             <SelectValue />
           </SelectTrigger>
@@ -164,7 +164,7 @@ export function Catalogo() {
         onCerrar={() => setEditando(null)}
         onGuardar={(m) => {
           const existe = config.motos.some((x) => x.id === m.id);
-          actualizar((c) => ({ ...c, motos: existe ? c.motos.map((x) => (x.id === m.id ? m : x)) : [...c.motos, m] }), existe ? 'Moto actualizada' : 'Moto agregada');
+          actualizar((c) => ({ ...c, motos: upsertPor(c.motos, m) }), existe ? 'Moto actualizada' : 'Moto agregada');
           setEditando(null);
         }}
       />
@@ -174,7 +174,7 @@ export function Catalogo() {
         titulo="¿Borrar esta moto del catálogo?"
         accion="Borrar moto"
         peligro
-        onConfirmar={() => borrando && actualizar((c) => ({ ...c, motos: c.motos.filter((x) => x.id !== borrando.id) }), 'Moto borrada')}
+        onConfirmar={() => borrando && actualizar((c) => ({ ...c, motos: quitarPor(c.motos, borrando.id) }), 'Moto borrada')}
       >
         Se va a quitar <b>{borrando && `${borrando.marca} ${borrando.modelo}`}</b> del catálogo.
       </Confirmar>
@@ -208,6 +208,7 @@ function MotoDialog(props: { moto: Moto | 'nuevo' | null; marcas: string[]; onCe
 
   const enviar = (e: FormEvent) => {
     e.preventDefault();
+    if (!props.moto) return; // diálogo ya cerrado: evita duplicar por doble envío
     // Una marca ya cargada con otras mayúsculas se unifica con la existente.
     const marca = props.marcas.find((m) => mismaMarca(m, d.marca.trim())) ?? d.marca;
     const r = motoSchema.safeParse({ ...d, marca, id: id ?? nuevoId(), precioLista: d.precioLista ?? 0, patentamiento: d.patentamiento ?? 0 });
@@ -225,13 +226,13 @@ function MotoDialog(props: { moto: Moto | 'nuevo' | null; marcas: string[]; onCe
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4">
             <Campo id="moto-marca" label="Marca" error={errores.marca}>
-              <Input id="moto-marca" value={d.marca} onChange={(e) => setD({ ...d, marca: e.target.value })} autoFocus placeholder="Ej.: Honda" {...invalido('moto-marca', errores.marca)} />
+              <Input id="moto-marca" value={d.marca} onChange={(e) => setD({ ...d, marca: e.target.value })} autoFocus {...invalido('moto-marca', errores.marca)} />
             </Campo>
             <Campo id="moto-modelo" label="Modelo" error={errores.modelo}>
-              <Input id="moto-modelo" value={d.modelo} onChange={(e) => setD({ ...d, modelo: e.target.value })} placeholder="Ej.: Wave" {...invalido('moto-modelo', errores.modelo)} />
+              <Input id="moto-modelo" value={d.modelo} onChange={(e) => setD({ ...d, modelo: e.target.value })} {...invalido('moto-modelo', errores.modelo)} />
             </Campo>
             <Campo id="moto-cc" label="Cilindrada" opcional>
-              <Input id="moto-cc" value={d.cilindrada} onChange={(e) => setD({ ...d, cilindrada: e.target.value })} placeholder="Ej.: 110 cc" />
+              <Input id="moto-cc" value={d.cilindrada} onChange={(e) => setD({ ...d, cilindrada: e.target.value })} />
             </Campo>
             <Campo id="moto-precio" label="Precio de lista" error={errores.precioLista}>
               <InputDinero id="moto-precio" value={d.precioLista} onValueChange={(v) => setD({ ...d, precioLista: v })} {...invalido('moto-precio', errores.precioLista)} />
@@ -298,7 +299,7 @@ function ActualizacionMasiva(props: { abierto: boolean; onCerrar: () => void; mo
               </Select>
             </Campo>
             <Campo id="masiva-pct" label="Porcentaje" error={error}>
-              <InputNumero id="masiva-pct" value={pct} onValueChange={setPct} sufijo="%" placeholder="Ej.: 8 o -5" autoFocus {...invalido('masiva-pct', error)} />
+              <InputNumero id="masiva-pct" value={pct} onValueChange={setPct} sufijo="%" autoFocus {...invalido('masiva-pct', error)} />
             </Campo>
           </div>
 
@@ -358,7 +359,7 @@ function ActualizacionMasiva(props: { abierto: boolean; onCerrar: () => void; mo
         accion="Actualizar precios"
         onConfirmar={() => props.onAplicar(pct, alcance)}
       >
-        Se va a aplicar <b>{valido && `${pct > 0 ? '+' : ''}${formatoNumero(pct)} %`}</b> a {alcance === TODAS ? 'todo el catálogo' : `las motos ${alcance}`}. Para volver atrás habría que aplicar el porcentaje inverso o importar un backup.
+        Se va a aplicar <b>{valido && `${pct > 0 ? '+' : ''}${formatoNumero(pct)} %`}</b> a {alcance === TODAS ? 'todo el catálogo' : `las motos ${alcance}`}. El porcentaje inverso no siempre vuelve al precio anterior, por el redondeo: para volver atrás, importar un backup.
       </Confirmar>
     </>
   );

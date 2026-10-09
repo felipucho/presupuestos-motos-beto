@@ -9,7 +9,8 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useConfig } from '@/lib/config';
 import { erroresPorCampo, localSchema, type Local } from '@/lib/schema';
-import { carpetaPorDefecto, elegirCarpeta, enTauri } from '@/lib/storage';
+import { carpetaPorDefecto, elegirCarpeta } from '@/lib/archivos';
+import { enTauri } from '@/lib/entorno';
 
 type Texto = Exclude<keyof Local, 'carpetaPdf'>;
 
@@ -20,7 +21,7 @@ export function DatosLocal() {
   const [porDefecto, setPorDefecto] = useState('');
 
   useEffect(() => {
-    if (enTauri) void carpetaPorDefecto().then(setPorDefecto);
+    if (enTauri) void carpetaPorDefecto().then(setPorDefecto).catch(() => setPorDefecto(''));
   }, []);
   // Si cambia desde afuera (p. ej. al importar un backup), se refleja acá.
   useEffect(() => setD(config.local), [config.local]);

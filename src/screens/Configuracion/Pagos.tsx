@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { lineaPlan } from '@/lib/calculos';
 import { useConfig } from '@/lib/config';
+import { quitarPor, upsertPor } from '@/lib/listas';
 import { etiquetaPlan, formatoMoneda, formatoNumero } from '@/lib/formato';
 import { configSchema, erroresPorCampo, nuevoId, planSchema, type Plan } from '@/lib/schema';
 
@@ -115,7 +116,7 @@ export function Pagos() {
         onCerrar={() => setEditando(null)}
         onGuardar={(p) => {
           const existe = config.planesTarjeta.some((x) => x.id === p.id);
-          actualizar((c) => ({ ...c, planesTarjeta: existe ? c.planesTarjeta.map((x) => (x.id === p.id ? p : x)) : [...c.planesTarjeta, p] }), existe ? 'Plan actualizado' : 'Plan agregado');
+          actualizar((c) => ({ ...c, planesTarjeta: upsertPor(c.planesTarjeta, p) }), existe ? 'Plan actualizado' : 'Plan agregado');
           setEditando(null);
         }}
       />
@@ -125,7 +126,7 @@ export function Pagos() {
         titulo="¿Borrar este plan?"
         accion="Borrar plan"
         peligro
-        onConfirmar={() => borrando && actualizar((c) => ({ ...c, planesTarjeta: c.planesTarjeta.filter((x) => x.id !== borrando.id) }), 'Plan borrado')}
+        onConfirmar={() => borrando && actualizar((c) => ({ ...c, planesTarjeta: quitarPor(c.planesTarjeta, borrando.id) }), 'Plan borrado')}
       >
         Se va a quitar el plan de <b>{borrando && etiquetaPlan(borrando.cuotas)}</b>. Los presupuestos ya generados no cambian.
       </Confirmar>
@@ -149,6 +150,7 @@ function PlanDialog(props: { plan: Plan | 'nuevo' | null; otros: Plan[]; onCerra
 
   const enviar = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!props.plan) return; // diálogo ya cerrado: evita duplicar por doble envío
     const r = planSchema.safeParse({ id: id ?? nuevoId(), cuotas, recargo });
     if (!r.success) {
       const errs = erroresPorCampo(r.error);

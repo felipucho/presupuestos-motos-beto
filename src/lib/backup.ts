@@ -1,7 +1,8 @@
 import { appDataDir, documentDir, join } from '@tauri-apps/api/path';
-import { open, save } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { z } from 'zod';
+import { guardarArchivo } from './archivos';
 import { fiadosSchema, type Fiados } from './fiados';
 import { fechaCompacta } from './formato';
 import { registroSchema, type Registro } from './historial';
@@ -42,14 +43,10 @@ const contenido = (b: Backup) => JSON.stringify({ tipo: TIPO, version: 1, creado
 
 /** Devuelve la ruta elegida, o null si se canceló. */
 export async function exportarBackup(b: Backup): Promise<string | null> {
-  const ruta = await save({
-    title: 'Exportar backup',
-    defaultPath: await join(await documentDir(), `motos-beto-backup-${fechaCompacta(new Date())}.json`),
-    filters: [{ name: 'Backup', extensions: ['json'] }],
-  });
-  if (!ruta) return null;
-  await writeTextFile(ruta, contenido(b));
-  return ruta;
+  return guardarArchivo(
+    { titulo: 'Exportar backup', ruta: await join(await documentDir(), `motos-beto-backup-${fechaCompacta(new Date())}.json`), filtro: { name: 'Backup', extensions: ['json'] } },
+    contenido(b),
+  );
 }
 
 /** null si se canceló; lanza Error con mensaje legible si el archivo no sirve. */

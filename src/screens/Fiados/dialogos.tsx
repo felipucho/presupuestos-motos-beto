@@ -148,6 +148,7 @@ export function ClienteDialog({ abierto, cliente, onCerrar, onGuardado }: { abie
   const repetidos = useMemo(() => (fiados && abierto ? parecidos(fiados.clientes, { id, nombre: f.nombre, telefono: f.telefono, dni: f.dni }) : []), [fiados, abierto, id, f.nombre, f.telefono, f.dni]);
 
   const guardar = () => {
+    if (!abierto) return; // ya guardado y cerrándose: evita crear otro cliente
     const limite = Number.isNaN(f.limite) ? null : aCentavos(f.limite);
     if (limite !== null && limite <= 0) return setErrores({ limite: 'Dejalo vacío para no poner límite' });
     const nuevo = { ...(cliente ?? { id: nuevoId(), noFiar: false, archivado: false, creado: ahora() }), ...f, limite };
@@ -240,10 +241,12 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
   const setItem = (n: number, cambio: Partial<Item>) => setArmado((a) => ({ ...a, items: a.items.map((x, i) => (i === n ? { ...x, ...cambio } : x)) }));
   const quitar = (n: number) => setArmado((a) => ({ ...a, items: a.items.filter((_, i) => i !== n) }));
 
-  const libreErr = { detalle: libre.detalle.trim() ? undefined : 'Escribí qué se lleva', precio: montoError(libre.precio) };
+  const cantidadOk = Number.isInteger(libre.cantidad) && libre.cantidad >= 1 && libre.cantidad <= 9999;
+  const libreErr = { detalle: libre.detalle.trim() ? undefined : 'Escribí qué se lleva', precio: montoError(libre.precio), cantidad: cantidadOk ? undefined : 'Entero entre 1 y 9999' };
+  const libreValido = !libreErr.detalle && !libreErr.precio && !libreErr.cantidad;
   const agregarLibre = () => {
-    if (libreErr.detalle || libreErr.precio || !(libre.cantidad >= 1)) return;
-    setArmado((a) => ({ ...a, items: [...a.items, { codigo: '', detalle: libre.detalle.trim(), cantidad: Math.round(libre.cantidad), precio: aCentavos(libre.precio), costo: null }] }));
+    if (!libreValido) return;
+    setArmado((a) => ({ ...a, items: [...a.items, { codigo: '', detalle: libre.detalle.trim(), cantidad: libre.cantidad, precio: aCentavos(libre.precio), costo: null }] }));
     setLibre(LIBRE);
   };
 
@@ -310,12 +313,12 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold">Artículos</p>
           <Button variant="outline" size="sm" onClick={() => { onCerrar(); irARepuestos(); }}>
-            <PackageSearch /> Buscar en Córdoba Motos
+            <PackageSearch /> Buscar en CM
           </Button>
         </div>
         {armado.items.length === 0 ? (
           <p className={cn('rounded-lg border border-dashed border-gris-plano px-4 py-5 text-center text-sm', intento ? 'text-error' : 'text-tinta-gris')}>
-            Agregá artículos desde Córdoba Motos o cargalos a mano acá abajo.
+            Todavía no hay artículos.
           </p>
         ) : (
           <div className="grid gap-1.5">
@@ -348,10 +351,10 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
         )}
 
         <div className="grid grid-cols-[1fr_5rem_8rem_auto] items-start gap-2 rounded-lg bg-gris-claro/50 p-2">
-          <Input value={libre.detalle} onChange={(e) => setLibre({ ...libre, detalle: e.target.value })} placeholder="A mano: mano de obra, otro proveedor…" aria-label="Detalle del ítem a mano" className="h-9" onKeyDown={(e) => e.key === 'Enter' && agregarLibre()} />
+          <Input value={libre.detalle} onChange={(e) => setLibre({ ...libre, detalle: e.target.value })} aria-label="Detalle del ítem a mano" className="h-9" onKeyDown={(e) => e.key === 'Enter' && agregarLibre()} />
           <InputNumero value={libre.cantidad} onValueChange={(v) => setLibre({ ...libre, cantidad: v })} aria-label="Cantidad del ítem a mano" className="h-9" />
           <InputNumero value={libre.precio} onValueChange={(v) => setLibre({ ...libre, precio: v })} placeholder="Precio" aria-label="Precio unitario del ítem a mano" className="h-9" onKeyDown={(e) => e.key === 'Enter' && agregarLibre()} />
-          <Button variant="outline" className="h-9" onClick={agregarLibre} disabled={Boolean(libreErr.detalle || libreErr.precio || !(libre.cantidad >= 1))}>
+          <Button variant="outline" className="h-9" onClick={agregarLibre} disabled={!libreValido}>
             <Plus /> Agregar
           </Button>
         </div>
@@ -369,7 +372,7 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
           <ElegirVendedor value={vendedor} onChange={setVendedor} />
       </div>
       <Campo id="cargo-nota" label="Nota" opcional>
-        <Input id="cargo-nota" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej.: para la moto del hijo, retira el sábado…" />
+        <Input id="cargo-nota" value={nota} onChange={(e) => setNota(e.target.value)} />
       </Campo>
 
       {cliente && hayAviso && (
@@ -417,7 +420,7 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
 
   const confirmar = () => {
     setIntento(true);
-    if (errMonto || errFecha) return;
+    if (!abierto || errMonto || errFecha) return; // ya cobrado y cerrándose: evita pago duplicado
     const m = validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'pago', monto: c, medio, fecha, registrado: ahora(), nota, vendedor, anulado: null });
     if (m?.tipo !== 'pago' || !fiados) return;
     const todos = [...fiados.movimientos.filter((x) => x.clienteId === cliente.id), m];
@@ -462,7 +465,7 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
       {k.saldo > 0 && c > 0 && c < k.saldo && <p className="text-sm text-tinta-media">Pago parcial: le quedan <b className="tabular">{formatoCentavos(queda)}</b>.</p>}
       {c > 0 && queda < 0 && <Aviso>Paga {formatoCentavos(-queda)} de más: le quedan a favor y se descuentan del próximo fiado.</Aviso>}
       <Campo id="pago-nota" label="Nota" opcional>
-        <Input id="pago-nota" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej.: transferencia de la esposa" />
+        <Input id="pago-nota" value={nota} onChange={(e) => setNota(e.target.value)} />
       </Campo>
     </Ventana>
   );
@@ -495,7 +498,7 @@ export function AjusteDialog({ cliente, k, modo, onCerrar }: { cliente: Cliente;
 
   const confirmar = () => {
     setIntento(true);
-    if (errMonto || errMotivo || errFecha) return;
+    if (!modo || errMonto || errMotivo || errFecha) return; // ya aplicado y cerrándose: evita ajuste duplicado
     const c = aCentavos(monto) * (sentido === 'restar' ? -1 : 1);
     const m = validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'ajuste', monto: c, fecha, registrado: ahora(), nota: motivo.trim(), vendedor: null, anulado: null });
     if (!m) return;

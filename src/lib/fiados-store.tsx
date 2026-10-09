@@ -1,29 +1,18 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { appDataDir, join } from '@tauri-apps/api/path';
 import { writeTextFile } from '@tauri-apps/plugin-fs';
-import { load, type Store } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
 import type { z } from 'zod';
+import { copiarDanado, guardarClave, leerClave } from './almacen';
 import { clienteSchema, diaDe, FIADOS_VACIO, movimientoSchema, sumarItem, type Fiados, type Item } from './fiados';
-import { enTauri } from './storage';
+import { enTauri } from './entorno';
+import { reintentarSiPendiente, respaldarSinEsperar } from './respaldo';
 
+const ARCHIVO = 'fiados.json';
 const CLAVE = 'fiados';
-let store: Store | null = null;
-const abrirStore = async () => (store ??= await load('fiados.json', { defaults: {}, autoSave: false }));
-
-async function leerCrudo(): Promise<unknown> {
-  if (!enTauri) {
-    const t = localStorage.getItem(CLAVE);
-    return t ? (JSON.parse(t) as unknown) : null;
-  }
-  return (await abrirStore()).get<unknown>(CLAVE);
-}
 
 export async function guardarFiados(f: Fiados): Promise<void> {
-  if (!enTauri) return void localStorage.setItem(CLAVE, JSON.stringify(f));
-  const s = await abrirStore();
-  await s.set(CLAVE, f);
-  await s.save();
+  await guardarClave(ARCHIVO, CLAVE, f);
 }
 
 const validos = <T,>(lista: unknown, schema: z.ZodType<T>): T[] =>
@@ -37,7 +26,7 @@ const validos = <T,>(lista: unknown, schema: z.ZodType<T>): T[] =>
  * guardado reescribe el archivo sin eso. Los movimientos de un cliente dañado también quedan afuera.
  */
 export async function cargarFiados(): Promise<{ fiados: Fiados; aviso: string | null }> {
-  const crudo = await leerCrudo();
+  const crudo = await leerClave(ARCHIVO, CLAVE);
   if (crudo === undefined || crudo === null) return { fiados: FIADOS_VACIO, aviso: null };
   const o = (typeof crudo === 'object' ? crudo : {}) as { clientes?: unknown; movimientos?: unknown };
   const clientes = validos(o.clientes, clienteSchema);
@@ -50,12 +39,8 @@ export async function cargarFiados(): Promise<{ fiados: Fiados; aviso: string | 
     await copiaDiaria(fiados);
     return { fiados, aviso: null };
   }
-  let copia = '';
-  if (enTauri) {
-    const ruta = await join(await appDataDir(), `fiados-danado-${Date.now()}.json`);
-    await writeTextFile(ruta, JSON.stringify(crudo, null, 2));
-    copia = ` Se guardó una copia del archivo original en ${ruta}.`;
-  }
+  const ruta = await copiarDanado('fiados-danado', crudo);
+  const copia = ruta ? ` Se guardó una copia del archivo original en ${ruta}.` : '';
   return { fiados, aviso: `Había ${malos === 1 ? 'un dato dañado' : `${malos} datos dañados`} en los fiados y se dejaron afuera.${copia}` };
 }
 
@@ -67,11 +52,9 @@ async function copiaDiaria(f: Fiados) {
   if (!enTauri || f.clientes.length === 0) return;
   const hoy = diaDe(new Date());
   try {
-    const s = await abrirStore();
-    if ((await s.get<string>('ultimaCopia')) === hoy) return;
+    if ((await leerClave(ARCHIVO, 'ultimaCopia')) === hoy) return;
     await writeTextFile(await join(await appDataDir(), `copia-fiados-dia-${hoy.slice(8)}.json`), JSON.stringify({ dia: hoy, fiados: f }, null, 2));
-    await s.set('ultimaCopia', hoy);
-    await s.save();
+    await guardarClave(ARCHIVO, 'ultimaCopia', hoy);
   } catch (e) {
     toast.warning('No se pudo hacer la copia diaria de los fiados', { description: String(e) });
   }
@@ -86,8 +69,10 @@ export interface Armado {
 interface Ctx {
   fiados: Fiados | null;
   errorCarga: string | null;
+  /** Aplica el cambio y lo guarda en segundo plano. */
   cambiar: (cambio: (f: Fiados) => Fiados, mensaje?: string | false) => void;
-  reemplazar: (f: Fiados) => void;
+  /** Reemplaza todo y espera a que quede escrito: la promesa falla si el disco falla. */
+  reemplazar: (f: Fiados) => Promise<void>;
   armado: Armado;
   setArmado: Dispatch<SetStateAction<Armado>>;
   agregarAlArmado: (i: Item) => void;
@@ -121,31 +106,53 @@ export function FiadosProvider({ children }: { children: ReactNode }) {
         actual.current = fiados;
         setFiados(fiados);
         if (aviso) toast.error('Fiados dañados', { description: aviso, duration: Infinity });
+        void reintentarSiPendiente(fiados);
       })
       .catch((e: unknown) => setErrorCarga(String(e)));
   }, []);
 
-  const cambiar = useCallback((cambio: (f: Fiados) => Fiados, mensaje: string | false = false) => {
-    const prev = actual.current;
-    if (!prev) return;
-    const next = cambio(prev);
-    if (next === prev) return;
-    actual.current = next;
-    setFiados(next);
-    cola.current = cola.current
-      .then(() => guardarFiados(next))
-      .then(() => {
-        if (mensaje) toast.success(mensaje);
-      })
-      .catch((e: unknown) => {
-        toast.error('No se pudo guardar el fiado', { description: `${String(e)}. Lo último no quedó guardado: cerrá y volvé a abrir la app antes de seguir.`, duration: Infinity });
-      });
+  const escribir = useCallback((f: Fiados) => {
+    const p = cola.current.then(() => guardarFiados(f));
+    cola.current = p.catch(() => undefined);
+    // Primero queda en esta computadora; la copia a GitHub va después, sin frenar los guardados siguientes.
+    p.then(() => respaldarSinEsperar(f)).catch(() => undefined);
+    return p;
   }, []);
 
-  const reemplazar = useCallback((f: Fiados) => cambiar(() => f, false), [cambiar]);
+  const cambiar = useCallback<Ctx['cambiar']>(
+    (cambio, mensaje = false) => {
+      const prev = actual.current;
+      if (!prev) return void toast.error('No se pueden guardar cambios: los fiados todavía no se cargaron.');
+      const next = cambio(prev);
+      if (next === prev) return;
+      actual.current = next;
+      setFiados(next);
+      escribir(next)
+        .then(() => {
+          if (mensaje) toast.success(mensaje);
+        })
+        .catch((e: unknown) => {
+          toast.error('No se pudo guardar el fiado', { description: `${String(e)}. Lo último no quedó guardado: cerrá y volvé a abrir la app antes de seguir.`, duration: Infinity });
+        });
+    },
+    [escribir],
+  );
+
+  const reemplazar = useCallback<Ctx['reemplazar']>(
+    (f) => {
+      actual.current = f;
+      setFiados(f);
+      return escribir(f);
+    },
+    [escribir],
+  );
+
   const agregarAlArmado = useCallback((i: Item) => setArmado((a) => ({ ...a, items: sumarItem(a.items, i) })), []);
 
-  return (
-    <FiadosCtx.Provider value={{ fiados, errorCarga, cambiar, reemplazar, armado, setArmado, agregarAlArmado, pedirArmado, setPedirArmado }}>{children}</FiadosCtx.Provider>
+  const value = useMemo<Ctx>(
+    () => ({ fiados, errorCarga, cambiar, reemplazar, armado, setArmado, agregarAlArmado, pedirArmado, setPedirArmado }),
+    [fiados, errorCarga, cambiar, reemplazar, armado, agregarAlArmado, pedirArmado],
   );
+
+  return <FiadosCtx.Provider value={value}>{children}</FiadosCtx.Provider>;
 }

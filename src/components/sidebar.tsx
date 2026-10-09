@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { ChartColumnBig, FilePlus2, HandCoins, PackageSearch, PanelLeftClose, PanelLeftOpen, Settings2, type LucideIcon } from 'lucide-react';
+import { ChartColumnBig, ChevronDown, FilePlus2, HandCoins, PackageSearch, PanelLeftClose, PanelLeftOpen, Settings2, type LucideIcon } from 'lucide-react';
 import logoPapel from '@/assets/marca/motos-beto-papel.png';
+import { PROVEEDORES, type IdProveedor } from '@/lib/proveedores';
 import { cn } from '@/lib/utils';
 
 export type Pantalla = 'nuevo' | 'repuestos' | 'fiados' | 'historial' | 'config';
@@ -23,8 +24,19 @@ function leerPlegado() {
   }
 }
 
-export function Sidebar({ activa, onIr }: { activa: Pantalla; onIr: (p: Pantalla) => void }) {
+export function Sidebar({
+  activa,
+  onIr,
+  proveedor,
+  onProveedor,
+}: {
+  activa: Pantalla;
+  onIr: (p: Pantalla) => void;
+  proveedor: IdProveedor;
+  onProveedor: (id: IdProveedor) => void;
+}) {
   const [plegado, setPlegado] = useState(leerPlegado);
+  const [repuestosAbierto, setRepuestosAbierto] = useState(true);
   const alternar = () => {
     setPlegado(!plegado);
     try {
@@ -58,27 +70,52 @@ export function Sidebar({ activa, onIr }: { activa: Pantalla; onIr: (p: Pantalla
       <nav className="flex flex-1 flex-col gap-0.5 px-3 pb-3" aria-label="Secciones">
         {ITEMS.map(({ id, label, icono: Icono }) => {
           const on = activa === id;
+          // Precios de repuestos despliega sus proveedores; plegado, va directo al último elegido.
+          const desplegable = id === 'repuestos' && !plegado;
           return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onIr(id)}
-              aria-current={on ? 'page' : undefined}
-              aria-label={plegado ? label : undefined}
-              title={plegado ? label : undefined}
-              className={cn(
-                'relative flex h-10 items-center gap-3 rounded-lg px-3 text-left text-sm font-medium whitespace-nowrap transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-naranja-vivo/70',
-                id === 'historial' && 'mt-auto',
-                on ? 'bg-papel-alto/[0.07] text-papel-alto' : 'hover:bg-papel-alto/[0.04] hover:text-papel-alto',
+            <div key={id} className={cn('contents', id === 'historial' && '[&>button]:mt-auto')}>
+              <button
+                type="button"
+                onClick={() => (desplegable ? setRepuestosAbierto(!repuestosAbierto) : onIr(id))}
+                aria-expanded={desplegable ? repuestosAbierto : undefined}
+                aria-current={on ? 'page' : undefined}
+                aria-label={plegado ? label : undefined}
+                title={plegado ? label : undefined}
+                className={cn(
+                  'relative flex h-10 items-center gap-3 rounded-lg px-3 text-left text-sm font-medium whitespace-nowrap transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-naranja-vivo/70',
+                  on ? 'bg-papel-alto/[0.07] text-papel-alto' : 'hover:bg-papel-alto/[0.04] hover:text-papel-alto',
+                )}
+              >
+                <span
+                  aria-hidden
+                  className={cn('absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-naranja-vivo transition-opacity duration-150', on ? 'opacity-100' : 'opacity-0')}
+                />
+                <Icono className={cn('size-[18px] shrink-0', on && 'text-naranja-vivo')} strokeWidth={1.9} />
+                {!plegado && label}
+                {desplegable && <ChevronDown aria-hidden className={cn('ml-auto size-4 transition-transform duration-150', !repuestosAbierto && '-rotate-90')} strokeWidth={1.9} />}
+              </button>
+              {desplegable && repuestosAbierto && (
+                <div className="mb-1 flex flex-col gap-0.5" role="group" aria-label="Proveedores">
+                  {PROVEEDORES.map((p) => {
+                    const sel = activa === 'repuestos' && proveedor === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => onProveedor(p.id)}
+                        aria-current={sel ? 'page' : undefined}
+                        className={cn(
+                          'flex h-8 items-center rounded-lg pl-[42px] text-left text-[13px] whitespace-nowrap transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-naranja-vivo/70',
+                          sel ? 'font-medium text-naranja-vivo' : 'text-papel-suave/80 hover:bg-papel-alto/[0.04] hover:text-papel-alto',
+                        )}
+                      >
+                        {p.nombreCorto}
+                      </button>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <span
-                aria-hidden
-                className={cn('absolute top-2 bottom-2 left-0 w-[3px] rounded-full bg-naranja-vivo transition-opacity duration-150', on ? 'opacity-100' : 'opacity-0')}
-              />
-              <Icono className={cn('size-[18px] shrink-0', on && 'text-naranja-vivo')} strokeWidth={1.9} />
-              {!plegado && label}
-            </button>
+            </div>
           );
         })}
       </nav>

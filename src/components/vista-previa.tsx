@@ -57,7 +57,8 @@ export function VistaPrevia({ datos }: { datos: DatosPresupuesto }) {
         const doc = await tarea.promise;
         const lienzos: HTMLCanvasElement[] = [];
         const dpr = window.devicePixelRatio || 1;
-        for (let n = 1; n <= doc.numPages; n++) {
+        // Si mientras tanto llegó otra actualización, no se siguen rasterizando hojas que nadie va a mostrar.
+        for (let n = 1; n <= doc.numPages && vigente; n++) {
           const pagina = await doc.getPage(n);
           const base = pagina.getViewport({ scale: 1 });
           const vp = pagina.getViewport({ scale: (ancho / base.width) * dpr });
