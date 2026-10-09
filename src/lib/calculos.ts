@@ -26,7 +26,8 @@ export interface Resumen {
   contado: LineaPago | null;
 }
 
-export const redondear = (n: number) => Math.round(n);
+/** Mitad hacia arriba. toPrecision quita el error de coma flotante: 412.698,4999… es 412.698,5 y sube. */
+export const redondear = (n: number) => Math.round(Number(n.toPrecision(15)));
 
 export const sumarGastos = (montos: readonly number[]) => montos.reduce((a, m) => a + m, 0);
 

@@ -6,6 +6,11 @@ export const formatoMoneda = (n: number) => moneda.format(n);
 
 export const formatoNumero = (n: number) => numero.format(n);
 
+const conCentavos = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** $ 7.575,31 a partir de centavos enteros. */
+export const formatoCentavos = (c: number) => conCentavos.format(c / 100);
+
 /** Sólo los dígitos de lo que se tipeó, como entero en pesos. null si está vacío. */
 export function parsearPesos(texto: string): number | null {
   const d = texto.replace(/\D/g, '');
@@ -49,13 +54,17 @@ export function numeroPresupuesto(prefijo: string, d: Date): string {
 
 /** Presupuesto-{numero}-{cliente}.pdf, sin caracteres que Windows no acepta en un nombre de archivo. */
 export function nombreArchivo(numero: string, cliente: string): string {
-  const limpio = cliente
+  const limpio = nombreSeguro(cliente);
+  return `Presupuesto-${numero}${limpio ? `-${limpio}` : ''}.pdf`;
+}
+
+/** Texto sin los caracteres que Windows no acepta en un nombre de archivo. */
+export const nombreSeguro = (t: string) =>
+  t
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/, '')
     .slice(0, 60);
-  return `Presupuesto-${numero}${limpio ? `-${limpio}` : ''}.pdf`;
-}
 
 export const etiquetaPlan = (cuotas: number) => (cuotas === 1 ? '1 pago' : `${cuotas} cuotas`);

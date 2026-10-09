@@ -33,7 +33,7 @@ Font.register({
 Font.registerHyphenationCallback((palabra) => [palabra]);
 
 // Paleta Motos Beto pensada para imprimir: hoja blanca, la tinta va en líneas y textos.
-const C = {
+export const C = {
   naranja: '#b84610',
   tinta: '#191713',
   tintaMedia: '#4a473f',
@@ -110,7 +110,7 @@ const s = StyleSheet.create({
 
 const o = (v: string, alt = '—') => (v.trim() ? v.trim() : alt);
 
-function contactos(l: Local): string[] {
+export function contactos(l: Local): string[] {
   return [l.telefono && `Tel. ${l.telefono}`, l.whatsapp && `WhatsApp ${l.whatsapp}`, l.instagram && `Instagram ${l.instagram.startsWith('@') ? l.instagram : `@${l.instagram}`}`].filter(
     (x): x is string => Boolean(x && x.trim()),
   );

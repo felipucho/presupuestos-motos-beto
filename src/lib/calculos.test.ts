@@ -79,6 +79,13 @@ describe('redondeo', () => {
     expect(lineaPlan(1, { id: 'x', cuotas: 2, recargo: 0 }, 0).valorCuota).toBe(1);
     expect(lineaContado(101, 50, 0).precioMoto).toBe(51);
   });
+
+  it('.5 exacto sube aunque el float diga 458.755,4999… (30 % de 655.365)', () => {
+    expect(lineaContado(655_365, 30, 0).precioMoto).toBe(458_756);
+    expect(lineaPlan(863_500, { id: 'x', cuotas: 3, recargo: 1.5 }, 0).precioMoto).toBe(876_453);
+    // 1.692.125 × 1,16 / 10 = 196.286,5
+    expect(lineaPlan(1_692_125, { id: 'x', cuotas: 10, recargo: 16 }, 0).valorCuota).toBe(196_287);
+  });
 });
 
 describe('ajustarPrecio', () => {

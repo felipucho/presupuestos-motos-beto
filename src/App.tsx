@@ -2,9 +2,12 @@ import { useEffect, useState } from 'react';
 import { Sidebar, type Pantalla } from '@/components/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfigProvider } from '@/lib/config';
+import { FiadosProvider } from '@/lib/fiados-store';
 import { borradorVacio, NuevoPresupuesto, type Borrador } from '@/screens/NuevoPresupuesto';
 import { Configuracion } from '@/screens/Configuracion';
+import { Fiados } from '@/screens/Fiados';
 import { Historial } from '@/screens/Historial';
+import { Repuestos } from '@/screens/Repuestos';
 
 export function App() {
   const [pantalla, setPantalla] = useState<Pantalla>('nuevo');
@@ -21,20 +24,26 @@ export function App() {
   }, []);
 
   return (
-    <div className="flex h-full">
-      <Sidebar activa={pantalla} onIr={setPantalla} />
-      <div className="min-w-0 flex-1">
-        <ConfigProvider fallback={<div className="h-full" />}>
-          {pantalla === 'nuevo' ? (
-            <NuevoPresupuesto borrador={borrador} setBorrador={setBorrador} irAConfig={() => setPantalla('config')} />
-          ) : pantalla === 'historial' ? (
-            <Historial />
-          ) : (
-            <Configuracion />
-          )}
-        </ConfigProvider>
+    <FiadosProvider>
+      <div className="flex h-full">
+        <Sidebar activa={pantalla} onIr={setPantalla} />
+        <div className="min-w-0 flex-1">
+          <ConfigProvider fallback={<div className="h-full" />}>
+            {pantalla === 'nuevo' ? (
+              <NuevoPresupuesto borrador={borrador} setBorrador={setBorrador} irAConfig={() => setPantalla('config')} />
+            ) : pantalla === 'repuestos' ? (
+              <Repuestos irAFiados={() => setPantalla('fiados')} />
+            ) : pantalla === 'fiados' ? (
+              <Fiados irARepuestos={() => setPantalla('repuestos')} />
+            ) : pantalla === 'historial' ? (
+              <Historial />
+            ) : (
+              <Configuracion />
+            )}
+          </ConfigProvider>
+        </div>
+        <Toaster position="top-right" offset={{ top: 20, right: 24 }} closeButton />
       </div>
-      <Toaster position="top-right" offset={{ top: 20, right: 24 }} closeButton />
-    </div>
+    </FiadosProvider>
   );
 }

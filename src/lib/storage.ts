@@ -1,10 +1,9 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { appDataDir, documentDir, join } from '@tauri-apps/api/path';
 import { open, save } from '@tauri-apps/plugin-dialog';
-import { mkdir, readTextFile, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
-import { openPath } from '@tauri-apps/plugin-opener';
+import { mkdir, writeFile, writeTextFile } from '@tauri-apps/plugin-fs';
+import { openPath, openUrl } from '@tauri-apps/plugin-opener';
 import { load, type Store } from '@tauri-apps/plugin-store';
-import { fechaCompacta } from './formato';
 import { CONFIG_INICIAL, validarConfig, type Config } from './schema';
 
 const CLAVE = 'config';
@@ -46,33 +45,6 @@ function leerLocal(): unknown {
   return t ? (JSON.parse(t) as unknown) : null;
 }
 
-/** Devuelve la ruta elegida, o null si se canceló. */
-export async function exportarConfig(config: Config): Promise<string | null> {
-  const ruta = await save({
-    title: 'Exportar configuración',
-    defaultPath: await join(await documentDir(), `motos-beto-configuracion-${fechaCompacta(new Date())}.json`),
-    filters: [{ name: 'Configuración', extensions: ['json'] }],
-  });
-  if (!ruta) return null;
-  await writeTextFile(ruta, JSON.stringify(config, null, 2));
-  return ruta;
-}
-
-/** Lee y valida un backup. null si se canceló; lanza Error con mensaje legible si no sirve. */
-export async function leerBackup(): Promise<Config | null> {
-  const ruta = await open({ title: 'Importar configuración', multiple: false, directory: false, filters: [{ name: 'Configuración', extensions: ['json'] }] });
-  if (!ruta) return null;
-  let datos: unknown;
-  try {
-    datos = JSON.parse(await readTextFile(ruta));
-  } catch {
-    throw new Error('El archivo no es un JSON válido.');
-  }
-  const r = validarConfig(datos);
-  if (!r.ok) throw new Error(r.error);
-  return r.config;
-}
-
 export async function carpetaPorDefecto(): Promise<string> {
   return join(await documentDir(), 'Presupuestos Motos Beto');
 }
@@ -83,11 +55,11 @@ export async function elegirCarpeta(actual: string): Promise<string | null> {
 }
 
 /** Abre "Guardar como" y escribe el PDF. Devuelve la ruta, o null si se canceló. */
-export async function guardarPdf(bytes: Uint8Array, nombre: string, carpeta: string | null): Promise<string | null> {
+export async function guardarPdf(bytes: Uint8Array, nombre: string, carpeta: string | null, titulo = 'Guardar presupuesto'): Promise<string | null> {
   const destino = carpeta ?? (await carpetaPorDefecto());
   if (carpeta === null) await mkdir(destino, { recursive: true }).catch(() => undefined); // si falla, el diálogo cae en otra carpeta
   const ruta = await save({
-    title: 'Guardar presupuesto',
+    title: titulo,
     defaultPath: await join(destino, nombre),
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
@@ -97,5 +69,16 @@ export async function guardarPdf(bytes: Uint8Array, nombre: string, carpeta: str
 }
 
 export const abrirArchivo = (ruta: string) => openPath(ruta);
+
+/** Sólo enlaces de WhatsApp: es lo único que la app tiene permitido abrir en el navegador. */
+export const abrirWhatsapp = (url: string) => openUrl(url);
+
+/** Abre "Guardar como" y escribe un CSV. Devuelve la ruta, o null si se canceló. */
+export async function guardarCsv(texto: string, nombre: string): Promise<string | null> {
+  const ruta = await save({ title: 'Exportar', defaultPath: await join(await documentDir(), nombre), filters: [{ name: 'CSV (Excel)', extensions: ['csv'] }] });
+  if (!ruta) return null;
+  await writeTextFile(ruta, texto);
+  return ruta;
+}
 
 export { enTauri };

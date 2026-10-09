@@ -56,6 +56,8 @@ export const configSchema = z.object({
   planesTarjeta: z.array(planSchema),
   gastos: z.array(gastoSchema),
   motos: z.array(motoSchema),
+  // IVA a sumar por proveedor (clave = id en PROVEEDORES). Sin entrada se usa IVA_POR_DEFECTO.
+  ivaProveedores: z.record(z.string(), z.number().min(0, 'No puede ser negativo').max(100, 'Máximo 100 %')).default({}),
 });
 
 export type Local = z.infer<typeof localSchema>;
@@ -82,6 +84,7 @@ export const CONFIG_INICIAL: Config = {
   planesTarjeta: [],
   gastos: [],
   motos: [],
+  ivaProveedores: {},
 };
 
 /** Valida un JSON de configuración y devuelve un mensaje legible si falla. */

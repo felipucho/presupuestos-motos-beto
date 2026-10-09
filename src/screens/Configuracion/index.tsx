@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Bike, CreditCard, DatabaseBackup, Receipt, Store, UsersRound, type LucideIcon } from 'lucide-react';
+import { Bike, CreditCard, DatabaseBackup, Receipt, Store, Truck, UsersRound, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Backup } from './Backup';
 import { Catalogo } from './Catalogo';
 import { DatosLocal } from './DatosLocal';
 import { Gastos } from './Gastos';
 import { Pagos } from './Pagos';
+import { Proveedores } from './Proveedores';
 import { Vendedores } from './Vendedores';
 
-type Seccion = 'local' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'backup';
+type Seccion = 'local' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'proveedores' | 'backup';
 
 const SECCIONES: { id: Seccion; label: string; icono: LucideIcon }[] = [
   { id: 'local', label: 'Datos del local', icono: Store },
@@ -16,6 +17,7 @@ const SECCIONES: { id: Seccion; label: string; icono: LucideIcon }[] = [
   { id: 'pagos', label: 'Pagos', icono: CreditCard },
   { id: 'gastos', label: 'Gastos', icono: Receipt },
   { id: 'catalogo', label: 'Catálogo', icono: Bike },
+  { id: 'proveedores', label: 'Proveedores', icono: Truck },
   { id: 'backup', label: 'Backup', icono: DatabaseBackup },
 ];
 
@@ -55,6 +57,7 @@ export function Configuracion() {
             {seccion === 'pagos' && <Pagos />}
             {seccion === 'gastos' && <Gastos />}
             {seccion === 'catalogo' && <Catalogo />}
+            {seccion === 'proveedores' && <Proveedores />}
             {seccion === 'backup' && <Backup />}
           </div>
         </main>

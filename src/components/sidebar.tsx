@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { ChartColumnBig, FilePlus2, PanelLeftClose, PanelLeftOpen, Settings2, type LucideIcon } from 'lucide-react';
+import { ChartColumnBig, FilePlus2, HandCoins, PackageSearch, PanelLeftClose, PanelLeftOpen, Settings2, type LucideIcon } from 'lucide-react';
 import logoPapel from '@/assets/marca/motos-beto-papel.png';
 import { cn } from '@/lib/utils';
 
-export type Pantalla = 'nuevo' | 'historial' | 'config';
+export type Pantalla = 'nuevo' | 'repuestos' | 'fiados' | 'historial' | 'config';
 
 const ITEMS: { id: Pantalla; label: string; icono: LucideIcon }[] = [
   { id: 'nuevo', label: 'Nuevo presupuesto', icono: FilePlus2 },
+  { id: 'repuestos', label: 'Precios de repuestos', icono: PackageSearch },
+  { id: 'fiados', label: 'Fiados', icono: HandCoins },
   { id: 'historial', label: 'Métricas', icono: ChartColumnBig },
   { id: 'config', label: 'Configuración', icono: Settings2 },
 ];

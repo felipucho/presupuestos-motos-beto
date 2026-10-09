@@ -90,3 +90,6 @@ export const borrarRegistro = (id: string) =>
     const { registros } = await cargarHistorial();
     await escribir(registros.filter((r) => r.id !== id));
   });
+
+/** Para importar un backup: reemplaza todo el historial. */
+export const reemplazarHistorial = (lista: Registro[]) => enCola(() => escribir(lista));
