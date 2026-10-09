@@ -1,0 +1,153 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* La app no tiene modo oscuro: los dark: de shadcn sólo aplicarían bajo una clase .dark que nunca se pone. */
+@custom-variant dark (&:is(.dark *));
+
+/* Archivo y Bitter: las mismas del sitio motosbeto.com, empaquetadas (la app no usa internet).
+   Son los mismos TTF que registra el PDF, así interfaz y documento comparten tipografía. */
+@font-face { font-family: 'Archivo'; font-weight: 400; font-display: block; src: url('./assets/fuentes/Archivo_400Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Archivo'; font-weight: 500; font-display: block; src: url('./assets/fuentes/Archivo_500Medium.ttf') format('truetype'); }
+@font-face { font-family: 'Archivo'; font-weight: 600; font-display: block; src: url('./assets/fuentes/Archivo_600SemiBold.ttf') format('truetype'); }
+@font-face { font-family: 'Archivo'; font-weight: 700; font-display: block; src: url('./assets/fuentes/Archivo_700Bold.ttf') format('truetype'); }
+@font-face { font-family: 'Archivo'; font-weight: 800; font-display: block; src: url('./assets/fuentes/Archivo_800ExtraBold.ttf') format('truetype'); }
+@font-face { font-family: 'Bitter'; font-weight: 400; font-display: block; src: url('./assets/fuentes/Bitter_400Regular.ttf') format('truetype'); }
+@font-face { font-family: 'Bitter'; font-weight: 400; font-style: italic; font-display: block; src: url('./assets/fuentes/Bitter_400Regular_Italic.ttf') format('truetype'); }
+@font-face { font-family: 'Bitter'; font-weight: 600; font-display: block; src: url('./assets/fuentes/Bitter_600SemiBold.ttf') format('truetype'); }
+
+/* Las cuatro tintas de Motos Beto (fijas, no configurables) + error y éxito apagados. */
+:root {
+  --naranja: #b84610;
+  --naranja-vivo: #e8763a;
+  --naranja-hondo: #8e3409;
+  --tinta: #191713;
+  --tinta-media: #4a473f;
+  --tinta-gris: #65615a;
+  --gris-plano: #c7c1b6;
+  --gris-claro: #dad5cb;
+  --papel: #eae7e1;
+  --papel-alto: #f5f3ef;
+  --papel-suave: #b9b3a8;
+  /* Semánticos: un rojo ladrillo más frío y hondo que el naranja, para no confundirse con la marca,
+     y un verde musgo. Los dos con contraste AA sobre papel-alto. */
+  --error: #9a2b26;
+  --error-suave: #f0dcd6;
+  --exito: #4d6a36;
+  --exito-suave: #dfe5d2;
+
+  /* Tema de shadcn/ui mapeado a las tintas. */
+  --background: var(--papel);
+  --foreground: var(--tinta);
+  --card: var(--papel-alto);
+  --card-foreground: var(--tinta);
+  --popover: var(--papel-alto);
+  --popover-foreground: var(--tinta);
+  --primary: var(--naranja);
+  --primary-foreground: var(--papel-alto);
+  --secondary: var(--papel-alto);
+  --secondary-foreground: var(--tinta);
+  --muted: var(--gris-claro);
+  --muted-foreground: var(--tinta-gris);
+  --accent: var(--gris-claro);
+  --accent-foreground: var(--tinta);
+  --destructive: var(--error);
+  --border: var(--gris-plano);
+  --input: var(--gris-plano);
+  --ring: var(--naranja);
+  --radius: 0.5rem;
+}
+
+/* Fuera la paleta por defecto de Tailwind: sólo existen las tintas. */
+@theme {
+  --color-*: initial;
+}
+
+@theme inline {
+  --color-naranja: var(--naranja);
+  --color-naranja-vivo: var(--naranja-vivo);
+  --color-naranja-hondo: var(--naranja-hondo);
+  --color-tinta: var(--tinta);
+  --color-tinta-media: var(--tinta-media);
+  --color-tinta-gris: var(--tinta-gris);
+  --color-gris-plano: var(--gris-plano);
+  --color-gris-claro: var(--gris-claro);
+  --color-papel: var(--papel);
+  --color-papel-alto: var(--papel-alto);
+  --color-papel-suave: var(--papel-suave);
+  --color-error: var(--error);
+  --color-error-suave: var(--error-suave);
+  --color-exito: var(--exito);
+  --color-exito-suave: var(--exito-suave);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: 'Archivo', sans-serif;
+  --font-heading: 'Archivo', sans-serif;
+  --font-texto: 'Bitter', Georgia, serif;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.5);
+
+  /* Sombras en tinta cálida, nunca negro. */
+  --shadow-xs: 0 1px 0 rgb(25 23 19 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(25 23 19 / 0.06);
+  --shadow-md: 0 6px 16px -4px rgb(25 23 19 / 0.12), 0 1px 2px rgb(25 23 19 / 0.06);
+  --shadow-lg: 0 16px 40px -12px rgb(25 23 19 / 0.22);
+  --shadow-hoja: 0 1px 2px rgb(25 23 19 / 0.08), 0 12px 32px -8px rgb(25 23 19 / 0.25);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html, body, #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    overflow: hidden;
+    user-select: none;
+    font-feature-settings: 'ss01' off;
+  }
+  input, textarea, [contenteditable] {
+    user-select: text;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--naranja) 22%, transparent);
+  }
+  /* Sin flechitas nativas en los inputs numéricos. */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--gris-plano); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--papel-suave); background-clip: padding-box; border: 2px solid transparent; }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
