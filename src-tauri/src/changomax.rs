@@ -20,9 +20,9 @@ fn cookies() -> &'static Arc<Jar> {
   JAR.get_or_init(|| Arc::new(Jar::default()))
 }
 
-fn cliente() -> &'static reqwest::Client {
+fn cliente() -> Result<&'static reqwest::Client, String> {
   static CLIENTE: OnceLock<reqwest::Client> = OnceLock::new();
-  CLIENTE.get_or_init(|| red::cliente(Some(cookies().clone())))
+  red::compartido(&CLIENTE, || red::crear(Some(cookies().clone())))
 }
 
 // Sin sesión, toda la tienda redirige al login (con URL amigable o la clásica de PrestaShop).
@@ -33,7 +33,7 @@ fn al_login(r: &reqwest::Response) -> bool {
 
 async fn login() -> Result<(), String> {
   let cuenta = credenciales::leer("changomax")?.ok_or(SIN_SESION)?;
-  let r = cliente()
+  let r = cliente()?
     .post(format!("{SITIO}/inicio-sesion"))
     .form(&[("email", cuenta.usuario.as_str()), ("password", cuenta.clave.as_str()), ("submitLogin", "1"), ("back", "")])
     .send()
@@ -48,7 +48,7 @@ async fn login() -> Result<(), String> {
 }
 
 async fn buscar(texto: &str) -> Result<reqwest::Response, String> {
-  cliente()
+  cliente()?
     .get(format!("{SITIO}/buscar"))
     .query(&[("s", texto), ("resultsPerPage", POR_PAGINA), ("ajax", "1"), ("from-xhr", "1")])
     .header(reqwest::header::ACCEPT, "application/json")
@@ -93,11 +93,11 @@ fn token(html: &str) -> Option<&str> {
 /// Suma `cantidad` unidades del producto (con su combinación, si tiene) al carrito.
 #[tauri::command]
 pub async fn changomax_carrito(app: AppHandle, producto: String, combinacion: String, cantidad: u32) -> Result<(), String> {
-  let pagina = || async { cliente().get(format!("{SITIO}/carrito")).send().await.map_err(|e| falla(NOMBRE, e)) };
+  let pagina = || async { cliente()?.get(format!("{SITIO}/carrito")).send().await.map_err(|e| falla(NOMBRE, e)) };
   let html = red::texto(NOMBRE, con_sesion(&app, pagina).await?).await?;
   let token = token(&html).ok_or_else(|| format!("{NOMBRE} cambió su carrito: no se encontró el token."))?;
   let qty = cantidad.to_string();
-  let r = cliente()
+  let r = cliente()?
     .post(format!("{SITIO}/carrito"))
     .header(reqwest::header::ACCEPT, "application/json")
     .header("X-Requested-With", "XMLHttpRequest")

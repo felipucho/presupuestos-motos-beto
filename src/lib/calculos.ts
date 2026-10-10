@@ -45,7 +45,10 @@ export function lineaContado(precioLista: number, descuento: number, gastos: num
   };
 }
 
-/** precio = P × (1 + recargo/100); cuota = precio / cuotas; total = precio + G. */
+/**
+ * precio = P × (1 + recargo/100); cuota = precio / cuotas, al centavo (al peso, cuotas × cuota no daría el precio);
+ * total = precio + G.
+ */
 export function lineaPlan(precioLista: number, plan: PlanCalculo, gastos: number): LineaPago {
   const precio = precioLista * (1 + plan.recargo / 100);
   return {
@@ -54,7 +57,7 @@ export function lineaPlan(precioLista: number, plan: PlanCalculo, gastos: number
     cuotas: plan.cuotas,
     porcentaje: plan.recargo,
     precioMoto: redondear(precio),
-    valorCuota: redondear(precio / plan.cuotas),
+    valorCuota: redondear((redondear(precio) * 100) / plan.cuotas) / 100,
     totalConGastos: redondear(precio + gastos),
   };
 }

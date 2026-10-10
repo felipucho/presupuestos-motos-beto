@@ -19,6 +19,8 @@ export interface FilaComprobante {
 export interface DatosComprobante {
   local: Local;
   titulo: string;
+  /** Identificador corto del movimiento, para encontrarlo en la app. */
+  numero?: string;
   /** AAAA-MM-DD */
   fecha: string;
   cliente: { nombre: string; telefono: string; dni: string };
@@ -73,9 +75,17 @@ export function ComprobantePDF({ d }: { d: DatosComprobante }) {
 
         <View style={s.titulo}>
           <Text style={s.tituloTexto}>{d.titulo.toUpperCase()}</Text>
-          <View>
-            <Text style={s.rotulo}>Fecha</Text>
-            <Text style={s.valor}>{formatoDia(d.fecha)}</Text>
+          <View style={{ flexDirection: 'row', gap: 28 }}>
+            {d.numero ? (
+              <View>
+                <Text style={s.rotulo}>N°</Text>
+                <Text style={s.valor}>{d.numero}</Text>
+              </View>
+            ) : null}
+            <View>
+              <Text style={s.rotulo}>Fecha</Text>
+              <Text style={s.valor}>{formatoDia(d.fecha)}</Text>
+            </View>
           </View>
         </View>
 

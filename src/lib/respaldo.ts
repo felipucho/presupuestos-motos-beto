@@ -90,12 +90,13 @@ export function subirFiados(f: Fiados): Promise<Resultado | null> {
 
 /** Sube sin frenar a quien guardó (lo local ya quedó hecho) y avisa si no se pudo. */
 export function respaldarSinEsperar(f: Fiados) {
-  void subirFiados(f).then((r) => {
-    if (r?.estado === 'error') toast.warning('No se pudo subir la copia de los fiados a GitHub', { id: 'respaldo', description: 'Queda pendiente: se reintenta con el próximo cambio o con «Subir ahora» en Configuración.' });
-  });
+  const avisar = () =>
+    toast.warning('No se pudo subir la copia de los fiados a GitHub', { id: 'respaldo', description: 'Queda pendiente: se reintenta con el próximo cambio o con «Subir ahora» en Configuración.' });
+  // También falla si no se pudo anotar el estado en disco: se avisa igual en vez de quedar como error suelto.
+  void subirFiados(f).then((r) => r?.estado === 'error' && avisar(), avisar);
 }
 
 /** Al abrir la app: si la última subida quedó pendiente, la vuelve a intentar. */
 export async function reintentarSiPendiente(f: Fiados) {
-  if (enTauri && (await leerEstadoRespaldo()).pendiente) respaldarSinEsperar(f);
+  if (enTauri && (await leerEstadoRespaldo().catch(() => SIN_SUBIDAS)).pendiente) respaldarSinEsperar(f);
 }

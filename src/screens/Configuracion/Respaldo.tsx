@@ -115,6 +115,7 @@ function Conectada({ repo, estado }: { repo: string; estado?: EstadoRespaldo }) 
         if (r?.estado === 'ok') toast.success('Fiados subidos a GitHub');
         if (r?.estado === 'error') toast.error('No se pudo subir a GitHub', { description: r.error, duration: 10000 });
       })
+      .catch((e: unknown) => toast.error('No se pudo subir a GitHub', { description: String(e), duration: 10000 }))
       .finally(() => setSubiendo(false));
   };
 

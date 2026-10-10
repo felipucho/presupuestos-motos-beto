@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { Bike, CreditCard, Eraser, FileDown, LoaderCircle, Plus, Receipt, Settings2, UserRound, X } from 'lucide-react';
+import { Bike, CreditCard, Eraser, FileDown, LoaderCircle, Plus, Printer, Receipt, Settings2, UserRound, X } from 'lucide-react';
 import { Campo, invalido } from '@/components/campo';
 import { ColorSelector } from '@/components/color-selector';
 import { InputDinero } from '@/components/inputs';
@@ -15,13 +15,14 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { calcularPresupuesto, lineaContado, lineaPlan } from '@/lib/calculos';
 import { useConfig } from '@/lib/config';
-import { etiquetaPlan, finDeMes, formatoMoneda, formatoNumero, nombreArchivo, numeroPresupuesto } from '@/lib/formato';
+import { etiquetaPlan, finDeMes, formatoMoneda, formatoNumero, formatoPesos, nombreArchivo, numeroPresupuesto } from '@/lib/formato';
 import { nuevoId, type Config, type Moto, type Vendedor } from '@/lib/schema';
 import { abrirArchivo, guardarPdf } from '@/lib/archivos';
 import { enTauri } from '@/lib/entorno';
 import { agregarRegistro } from '@/lib/historial';
 import { altasCatalogo, mensajeAltas } from '@/lib/presupuesto';
 import { generarPdf } from '@/pdf/generar';
+import { imprimirPdf } from '@/pdf/imprimir';
 import type { DatosPresupuesto, HojaMoto } from '@/pdf/PresupuestoPDF';
 import { cn } from '@/lib/utils';
 
@@ -70,6 +71,7 @@ const motoDe = (config: Config, item: ItemMoto) => config.motos.find((m) => m.id
 
 /** Clave = id del campo con error; se cargan en el orden de la pantalla para llevar el foco al primero. */
 type Errores = Record<string, string>;
+type Modo = 'pdf' | 'imprimir';
 
 function validar(b: Borrador, config: Config, vendedor: Vendedor | undefined): Errores {
   const e: Errores = {};
@@ -128,7 +130,7 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
   const { config, actualizar } = useConfig();
   const { borrador: b, setBorrador } = props;
   const [intentado, setIntentado] = useState(false);
-  const [generando, setGenerando] = useState(false);
+  const [haciendo, setHaciendo] = useState<Modo | null>(null);
   const ocupado = useRef(false);
 
   const vendedor = config.vendedores.find((v) => v.id === b.vendedorId);
@@ -162,7 +164,8 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
     const m = motoDe(config, item);
     if (!m) return;
     const precio = item.precioLista && item.precioLista > 0 ? item.precioLista : m.precioLista;
-    const patentamiento = item.patentamiento ?? 0;
+    // Vacío = sin patentamiento sólo en este presupuesto: el catálogo conserva el suyo.
+    const patentamiento = item.patentamiento ?? m.patentamiento;
     if (precio === m.precioLista && patentamiento === m.patentamiento) return;
     actualizar((c) => ({ ...c, motos: c.motos.map((x) => (x.id === m.id ? { ...x, precioLista: precio, patentamiento } : x)) }), avisar && `Guardado en ${m.marca} ${m.modelo}`);
   };
@@ -187,28 +190,34 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
     toast('Formulario limpio', { action: { label: 'Deshacer', onClick: () => setBorrador(() => anterior) } });
   };
 
-  const generar = useCallback(async () => {
+  const emitir = useCallback(async (modo: Modo) => {
     if (ocupado.current) return;
     setIntentado(true);
     const primero = Object.keys(validar(b, config, vendedor))[0];
     if (primero) {
       document.getElementById(primero)?.focus();
-      toast.error('Revisá los datos marcados antes de generar el PDF');
+      toast.error('Revisá los datos marcados antes de seguir');
       return;
     }
     // Con Ctrl+Enter el campo no pierde el foco, así que el cambio de precio se guarda acá.
     for (const item of b.motos) guardarEnMoto(item, false);
     if (!enTauri) {
-      toast.info('Guardar el PDF funciona sólo en la app de escritorio');
+      toast.info(modo === 'pdf' ? 'Guardar el PDF funciona sólo en la app de escritorio' : 'Imprimir funciona sólo en la app de escritorio');
       return;
     }
     ocupado.current = true;
-    setGenerando(true);
+    setHaciendo(modo);
     try {
       const final = armarDatos(config, b, vendedor, new Date());
       const bytes = await generarPdf(final);
-      const ruta = await guardarPdf(bytes, nombreArchivo(final.numero, b.cliente), config.local.carpetaPdf);
-      if (!ruta) return;
+      // Imprimir no deja archivo: el historial lo anota sin ruta.
+      let ruta = '';
+      if (modo === 'imprimir') await imprimirPdf(bytes, config.local.impresora);
+      else {
+        const guardado = await guardarPdf(bytes, nombreArchivo(final.numero, b.cliente), config.local.carpetaPdf);
+        if (!guardado) return;
+        ruta = guardado;
+      }
       agregarRegistro({
         id: nuevoId(),
         numero: final.numero,
@@ -222,7 +231,7 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
           totalContado: h.resumen.contado?.totalConGastos ?? null,
         })),
         archivo: ruta,
-      }).catch((e: unknown) => toast.error('El PDF se guardó, pero no se pudo anotar en el historial', { description: String(e), duration: Infinity }));
+      }).catch((e: unknown) => toast.error('El presupuesto se hizo, pero no se pudo anotar en el historial', { description: String(e), duration: Infinity }));
       // «Otra moto…» con «Guardar en el catálogo»: se agrega, salvo que ya exista con la misma marca, modelo y cilindrada.
       const altas = b.motos
         .filter((it) => it.motoId === OTRA && it.guardarEnCatalogo)
@@ -233,21 +242,22 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
         setBorrador((x) => ({ ...x, motos: x.motos.map((it) => (elegida[it.key] ? { ...it, motoId: elegida[it.key] ?? null, guardarEnCatalogo: false } : it)) }));
       }
       const extra = mensajeAltas(nuevas.length, repetidas);
-      toast.success('PDF guardado', {
+      const impresora = config.local.impresora ?? 'Impresora predeterminada de Windows';
+      toast.success(modo === 'pdf' ? 'PDF guardado' : 'Enviado a la impresora', {
         description: (
           <>
-            <span className="block break-all">{ruta}</span>
+            <span className="block break-all">{modo === 'pdf' ? ruta : impresora}</span>
             {extra && <span className="mt-1 block">{extra}</span>}
           </>
         ),
         duration: 10000,
-        action: { label: 'Abrir PDF', onClick: () => void abrirArchivo(ruta).catch((e: unknown) => toast.error('No se pudo abrir el PDF', { description: String(e) })) },
+        action: modo === 'pdf' ? { label: 'Abrir PDF', onClick: () => void abrirArchivo(ruta).catch((e: unknown) => toast.error('No se pudo abrir el PDF', { description: String(e) })) } : undefined,
       });
     } catch (e) {
-      toast.error('No se pudo guardar el PDF', { description: String(e), duration: Infinity });
+      toast.error(modo === 'pdf' ? 'No se pudo guardar el PDF' : 'No se pudo imprimir', { description: String(e), duration: Infinity });
     } finally {
       ocupado.current = false;
-      setGenerando(false);
+      setHaciendo(null);
     }
   }, [b, vendedor, config, actualizar, setBorrador]);
 
@@ -255,12 +265,12 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey && (e.key === 'Enter' || e.key.toLowerCase() === 'p')) {
         e.preventDefault();
-        void generar();
+        void emitir('pdf');
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [generar]);
+  }, [emitir]);
 
   // Con una sola moto se muestran los montos al lado de cada forma de pago; con varias cambian por hoja.
   const precioUnico = b.motos.length === 1 ? (b.motos[0]?.precioLista ?? null) : null;
@@ -464,7 +474,7 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
                         onChange={(v) => set('planesExcluidos', alternar(b.planesExcluidos, p.id, v))}
                         label={`Tarjeta en ${etiquetaPlan(p.cuotas)}`}
                         detalle={p.recargo > 0 ? `${formatoNumero(p.recargo)} % de recargo` : 'Sin recargo'}
-                        monto={precioUnico ? `${p.cuotas} × ${formatoMoneda(l.valorCuota ?? 0)}` : null}
+                        monto={precioUnico ? `${p.cuotas} × ${formatoPesos(l.valorCuota ?? 0)}` : null}
                       />
                     );
                   })}
@@ -503,11 +513,17 @@ export function NuevoPresupuesto(props: { borrador: Borrador; setBorrador: (f: (
         <div className="min-h-0 flex-1">
           <VistaPrevia datos={datos} />
         </div>
-        <Button size="lg" className="h-13 w-full text-[15px] font-semibold" onClick={() => void generar()} disabled={generando}>
-          {generando ? <LoaderCircle className="animate-spin" /> : <FileDown />}
-          {generando ? 'Generando…' : 'Generar PDF'}
-          <kbd className="ml-2 rounded border border-papel-alto/30 px-1.5 py-0.5 font-sans text-[11px] font-medium text-papel-alto/80">Ctrl + Enter</kbd>
-        </Button>
+        <div className="grid grid-cols-2 gap-3">
+          <Button size="lg" className="h-13 text-[15px] font-semibold" onClick={() => void emitir('pdf')} disabled={haciendo !== null}>
+            {haciendo === 'pdf' ? <LoaderCircle className="animate-spin" /> : <FileDown />}
+            {haciendo === 'pdf' ? 'Generando…' : 'Generar PDF'}
+            <kbd className="ml-2 rounded border border-papel-alto/30 px-1.5 py-0.5 font-sans text-[11px] font-medium text-papel-alto/80">Ctrl + Enter</kbd>
+          </Button>
+          <Button size="lg" variant="outline" className="h-13 text-[15px] font-semibold" onClick={() => void emitir('imprimir')} disabled={haciendo !== null}>
+            {haciendo === 'imprimir' ? <LoaderCircle className="animate-spin" /> : <Printer />}
+            {haciendo === 'imprimir' ? 'Imprimiendo…' : 'Imprimir'}
+          </Button>
+        </div>
       </section>
     </div>
   );

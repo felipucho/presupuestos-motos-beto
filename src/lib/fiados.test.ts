@@ -4,11 +4,15 @@ import {
   csvClientes,
   cuenta,
   enlaceMensaje,
+  fiadoInusual,
+  fiadosSchema,
+  incobrablePendiente,
   movimientoSchema,
   parecidos,
   quitarDevueltos,
   resumen,
   saldosCorridos,
+  saldosRecibo,
   sumarItem,
   unir,
   type Cliente,
@@ -140,6 +144,46 @@ it('valida movimientos: monto 0 o cargo sin ítems no pasan', () => {
   expect(movimientoSchema.safeParse(ajuste('2026-01-01', 0)).success).toBe(false);
   expect(movimientoSchema.safeParse({ ...cargo('2026-01-01', 100), items: [] }).success).toBe(false);
   expect(movimientoSchema.safeParse({ ...pago('2026-01-01', 100), fecha: '01/01/2026' }).success).toBe(false);
+});
+
+describe('saldosRecibo', () => {
+  it('muestra el saldo actual, no el corrido a la fecha del pago', () => {
+    const p = { ...pago('2026-10-03', 300_00), registrado: '2026-10-09T15:00:00.000Z' } as Extract<Movimiento, { tipo: 'pago' }>;
+    const movs = [cargo('2026-10-01', 1000_00), cargo('2026-10-05', 500_00), p];
+    expect(saldosRecibo(movs, p)).toEqual({ anterior: 1500_00, saldo: 1200_00 });
+  });
+
+  it('sin saldo anterior si después del pago se registró o anuló algo', () => {
+    const p = pago('2026-10-03', 300_00) as Extract<Movimiento, { tipo: 'pago' }>;
+    const viejo = { ...cargo('2026-10-01', 1000_00), registrado: '2026-10-01T00:00:00.000Z' };
+    const despues = { ...cargo('2026-10-05', 500_00), registrado: '2026-10-20T00:00:00.000Z' };
+    expect(saldosRecibo([viejo, p, despues], p)).toEqual({ anterior: null, saldo: 1200_00 });
+    const anuladoDespues = { ...viejo, anulado: { fecha: '2026-10-20T00:00:00.000Z', motivo: 'x' } };
+    expect(saldosRecibo([anuladoDespues, p], p)).toEqual({ anterior: null, saldo: -300_00 });
+  });
+});
+
+it('incobrable pendiente: lo dado de baja menos lo recuperado, sin anulados ni otros ajustes', () => {
+  const baja = { ...ajuste('2026-01-01', -1000_00), nota: 'Incobrable' };
+  const recupero = { ...ajuste('2026-02-01', 300_00), nota: 'Recupero de incobrable' };
+  expect(incobrablePendiente([cargo('2025-12-01', 1000_00), baja, recupero, { ...ajuste('2026-01-02', -50_00), nota: 'Descuento' }])).toBe(700_00);
+  expect(incobrablePendiente([anular(baja)])).toBe(0);
+});
+
+it('fiado inusual: más de 3 veces el mayor, o más de $ 1.000.000 sin historia', () => {
+  const movs = [cargo('2026-01-01', 100_00), anular(cargo('2026-01-02', 10_000_00))];
+  expect(fiadoInusual(movs, 300_00)).toBe(false);
+  expect(fiadoInusual(movs, 301_00)).toBe(true);
+  expect(fiadoInusual([], 1_000_000_00)).toBe(false);
+  expect(fiadoInusual([], 1_000_000_01)).toBe(true);
+});
+
+it('importar: rechaza movimientos de clientes que no están en el archivo', () => {
+  const ok = { clientes: [cliente('c1', 'Ana')], movimientos: [cargo('2026-01-01', 100)] };
+  expect(fiadosSchema.safeParse(ok).success).toBe(true);
+  const r = fiadosSchema.safeParse({ ...ok, movimientos: [...ok.movimientos, { ...pago('2026-01-02', 100), clienteId: 'fantasma' }] });
+  expect(r.success).toBe(false);
+  expect(r.error?.issues[0]?.path).toEqual(['movimientos', 1, 'clienteId']);
 });
 
 it('unir no hace nada si es el mismo cliente o alguno no existe', () => {

@@ -40,9 +40,13 @@ const sinEtiquetas = (s: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-/** Primer texto dentro del elemento con esa clase (tolera otras clases, comillas simples y etiquetas en el medio). */
+/** Primer texto dentro del elemento con esa clase (tolera otras clases, comillas simples y etiquetas en el medio).
+ * Saltea lo tachado (<del>, <s>, <strike>): en una oferta ahí va el precio viejo. */
 const textoDe = (html: string, clase: string) => {
-  const m = new RegExp(`class=["'][^"']*\\b${clase}\\b[^"']*["'][^>]*>(?:\\s*<(?!img)[^>]*>)*\\s*([^<]+)`, 'i').exec(html);
+  const m = new RegExp(
+    `class=["'][^"']*\\b${clase}\\b[^"']*["'][^>]*>(?:\\s*(?:<(?:del|s|strike)\\b[^>]*>[\\s\\S]*?</(?:del|s|strike)>|<(?!img)[^>]*>))*\\s*([^<]+)`,
+    'i',
+  ).exec(html);
   return m?.[1]?.trim() || undefined;
 };
 
@@ -102,6 +106,7 @@ export function leerNeumat(html: string): Resultado {
 
 const abSchema = z.object({
   lista: z.string(),
+  // Sin la lista de descuentos no se sabe la bonificación: tomarla como 0 inflaría el costo.
   descuentos: z
     .array(
       z.object({
@@ -110,8 +115,7 @@ const abSchema = z.object({
         descuento1: z.number().catch(0),
         descuento2: z.number().catch(0),
       }),
-    )
-    .catch([]),
+    ),
   respuesta: z.object({
     total: z.number().optional().catch(undefined),
     data: z.array(z.unknown()),

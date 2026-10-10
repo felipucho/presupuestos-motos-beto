@@ -23,6 +23,13 @@ describe('leerDatosBackup', () => {
     expect(() => leerDatosBackup(malo)).toThrow('fiados.clientes.0.nombre');
   });
 
+  it('copias de sólo fiados (GitHub y diaria vieja): reemplazan sólo los fiados', () => {
+    const fiados = { clientes: [cliente], movimientos: [] };
+    expect(leerDatosBackup({ tipo: 'motos-beto-fiados', version: 1, fiados })).toMatchObject({ config: null, historial: null, fiados });
+    expect(leerDatosBackup({ dia: '2026-10-09', fiados })).toMatchObject({ config: null, historial: null, fiados });
+    expect(() => leerDatosBackup({ tipo: 'motos-beto-fiados', fiados: { clientes: [{ ...cliente, nombre: '' }], movimientos: [] } })).toThrow('clientes.0.nombre');
+  });
+
   it('configuración dañada dentro de un completo', () => {
     expect(() => leerDatosBackup({ ...completo, config: {} })).toThrow('schemaVersion');
   });

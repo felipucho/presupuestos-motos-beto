@@ -100,7 +100,7 @@ pub async fn respaldo_conectar(repo: String, token: String) -> Result<String, St
   if token.is_empty() {
     return Err("Pegá el token de acceso.".into());
   }
-  verificar_repo(&red::cliente(None), &repo, &token).await?;
+  verificar_repo(&red::crear(None)?, &repo, &token).await?;
   let guardado = serde_json::to_string(&Conexion { repo: repo.clone(), token }).map_err(|e| e.to_string())?;
   entrada()?.set_password(&guardado).map_err(|e| e.to_string())?;
   Ok(repo)
@@ -124,7 +124,7 @@ pub fn respaldo_desconectar() -> Result<(), String> {
 #[tauri::command]
 pub async fn respaldo_subir(contenido: String, mensaje: String) -> Result<(), String> {
   let c = leer()?.ok_or("No hay una cuenta de GitHub conectada.")?;
-  let cli = red::cliente(None);
+  let cli = red::crear(None)?;
   verificar_repo(&cli, &c.repo, &c.token).await?;
   let url = format!("{API}/repos/{}/contents/{ARCHIVO}", c.repo);
   let mut r = subir_una_vez(&cli, &url, &c.token, &mensaje, &contenido).await?;

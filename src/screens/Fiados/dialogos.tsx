@@ -15,7 +15,9 @@ import {
   clienteSchema,
   cuenta,
   diaDe,
+  fiadoInusual,
   formatoDia,
+  incobrablePendiente,
   MEDIOS,
   movimientoSchema,
   parecidos,
@@ -40,7 +42,10 @@ type Vendedor = { id: string; nombre: string } | null;
 const SIN = 'ninguno';
 const hoy = () => diaDe(new Date());
 const ahora = () => new Date().toISOString();
-const fechaOk = (d: string, max: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= max;
+// Con mínimo: un año mal tipeado ("0026") queda primero en la cuenta y desordena los saldos.
+const FECHA_MIN = '2000-01-01';
+const fechaOk = (d: string, max: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= FECHA_MIN && d <= max;
+const ERR_FECHA = 'Elegí una fecha entre el 01/01/2000 y hoy';
 const pesos = (c: number) => c / 100;
 
 /** Valida con el mismo esquema que la carga del archivo: lo que no pasa no se guarda. */
@@ -97,7 +102,7 @@ function Chips({ opciones, onElegir }: { opciones: string[]; onElegir: (t: strin
   );
 }
 
-function CampoFecha({ id, label, value, onChange, min, max, opcional, error }: { id: string; label: string; value: string; onChange: (v: string) => void; min?: string; max?: string; opcional?: boolean; error?: string }) {
+function CampoFecha({ id, label, value, onChange, min = FECHA_MIN, max, opcional, error }: { id: string; label: string; value: string; onChange: (v: string) => void; min?: string; max?: string; opcional?: boolean; error?: string }) {
   return (
     <Campo id={id} label={label} opcional={opcional} error={error}>
       <Input id={id} type="date" value={value} min={min} max={max} onChange={(e) => onChange(e.target.value)} {...invalido(id, error)} />
@@ -229,14 +234,19 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
 
   const activos = useMemo(() => (fiados?.clientes ?? []).filter((c) => !c.archivado || c.id === armado.clienteId).sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')), [fiados, armado.clienteId]);
   const cliente = fiados?.clientes.find((c) => c.id === armado.clienteId) ?? null;
-  const k: Cuenta | null = cliente && fiados ? cuenta(fiados.movimientos.filter((m) => m.clienteId === cliente.id), hoy()) : null;
+  const movsCliente = cliente && fiados ? fiados.movimientos.filter((m) => m.clienteId === cliente.id) : [];
+  const k: Cuenta | null = cliente && fiados ? cuenta(movsCliente, hoy()) : null;
   const total = totalItems(armado.items);
   const ganancia = armado.items.reduce((a, i) => a + (i.costo === null ? 0 : (i.precio - i.costo) * i.cantidad), 0);
   const conCosto = armado.items.some((i) => i.costo !== null);
 
   const superaLimite = cliente?.limite != null && k !== null && k.saldo + total > cliente.limite;
-  const hayAviso = Boolean(cliente?.noFiar || superaLimite);
-  const errFecha = fechaOk(fecha, hoy()) ? undefined : 'Elegí una fecha que no sea futura';
+  const inusual = cliente !== null && fiadoInusual(movsCliente, total);
+  const hayAviso = Boolean(cliente?.noFiar || superaLimite || inusual);
+  const errFecha = fechaOk(fecha, hoy()) ? undefined : ERR_FECHA;
+
+  // "Fiarle igual" vale para el cliente y el aviso que se vieron: si cambian, hay que volver a confirmar.
+  useEffect(() => setIgual(false), [armado.clienteId, inusual, superaLimite, cliente?.noFiar]);
 
   const setItem = (n: number, cambio: Partial<Item>) => setArmado((a) => ({ ...a, items: a.items.map((x, i) => (i === n ? { ...x, ...cambio } : x)) }));
   const quitar = (n: number) => setArmado((a) => ({ ...a, items: a.items.filter((_, i) => i !== n) }));
@@ -380,6 +390,7 @@ export function CargoDialog({ abierto, onCerrar, irARepuestos, onCargado }: { ab
           <ul className="grid gap-0.5">
             {cliente.noFiar && <li>Este cliente está marcado «no fiar más».</li>}
             {superaLimite && <li>Con este fiado debería {formatoCentavos((k?.saldo ?? 0) + total)} y su límite es {formatoCentavos(cliente.limite ?? 0)}.</li>}
+            {inusual && <li>{formatoCentavos(total)} es mucho más de lo que se le suele fiar. Revisá los precios y cantidades.</li>}
           </ul>
           <label className="mt-2 flex items-center gap-2 font-medium">
             <Checkbox checked={igual} onCheckedChange={(v) => setIgual(v === true)} /> Fiarle igual
@@ -402,6 +413,8 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
   const [fecha, setFecha] = useState(hoy);
   const [vendedor, setVendedor] = useState<Vendedor>(null);
   const [nota, setNota] = useState('');
+  const [recuperar, setRecuperar] = useState(true);
+  const [seguro, setSeguro] = useState(false);
   const [intento, setIntento] = useState(false);
 
   useEffect(() => {
@@ -410,24 +423,37 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
     setMedio('efectivo');
     setFecha(hoy());
     setNota('');
+    setRecuperar(true);
+    setSeguro(false);
     setIntento(false);
   }, [abierto]);
 
+  const movs = useMemo(() => fiados?.movimientos.filter((x) => x.clienteId === cliente.id) ?? [], [fiados, cliente.id]);
   const errMonto = montoError(monto);
-  const errFecha = fechaOk(fecha, hoy()) ? undefined : 'Elegí una fecha que no sea futura';
+  const errFecha = fechaOk(fecha, hoy()) ? undefined : ERR_FECHA;
   const c = Number.isNaN(monto) ? 0 : aCentavos(monto);
   const queda = k.saldo - c;
+  // Lo que paga de más sobre una deuda dada por incobrable recupera esa deuda, no queda a favor.
+  const incobrable = incobrablePendiente(movs);
+  const recupero = c > 0 && queda < 0 && recuperar ? Math.min(-queda, incobrable) : 0;
+  const resto = queda + recupero;
+  // A favor más grande que lo que debía: suele ser un cero de más.
+  const exagerado = c > 0 && -resto > Math.max(0, k.saldo);
 
   const confirmar = () => {
     setIntento(true);
-    if (!abierto || errMonto || errFecha) return; // ya cobrado y cerrándose: evita pago duplicado
+    if (!abierto || errMonto || errFecha || (exagerado && !seguro)) return; // ya cobrado y cerrándose: evita pago duplicado
+    const r = recupero > 0 ? validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'ajuste', monto: recupero, fecha, registrado: ahora(), nota: 'Recupero de incobrable', vendedor, anulado: null }) : null;
+    if (recupero > 0 && !r) return;
     const m = validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'pago', monto: c, medio, fecha, registrado: ahora(), nota, vendedor, anulado: null });
     if (m?.tipo !== 'pago' || !fiados) return;
-    const todos = [...fiados.movimientos.filter((x) => x.clienteId === cliente.id), m];
-    cambiar((x) => ({ ...x, movimientos: [...x.movimientos, m] }));
+    const nuevos = r ? [r, m] : [m];
+    const todos = [...movs, ...nuevos];
+    const dia = hoy();
+    cambiar((x) => ({ ...x, movimientos: [...x.movimientos, ...nuevos] }));
     toast.success(`Pago de ${cliente.nombre} registrado`, {
-      description: queda > 0 ? `Le quedan ${formatoCentavos(queda)}` : queda < 0 ? `Quedan ${formatoCentavos(-queda)} a favor` : 'Quedó al día',
-      action: { label: 'Guardar recibo', onClick: () => void guardarComprobante(recibo(config.local, cliente, m, todos), config.local.carpetaPdf) },
+      description: [recupero > 0 && `Recuperó ${formatoCentavos(recupero)} de lo incobrable.`, resto > 0 ? `Le quedan ${formatoCentavos(resto)}` : resto < 0 ? `Quedan ${formatoCentavos(-resto)} a favor` : 'Quedó al día'].filter(Boolean).join(' '),
+      action: { label: 'Guardar recibo', onClick: () => void guardarComprobante(recibo(config.local, cliente, m, todos, dia), config.local.carpetaPdf) },
       duration: 10000,
     });
     onCerrar();
@@ -439,11 +465,24 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
       onCerrar={onCerrar}
       titulo={`Pago de ${cliente.nombre}`}
       descripcion={k.saldo > 0 ? `Debe ${formatoCentavos(k.saldo)}.` : k.saldo < 0 ? `Tiene ${formatoCentavos(-k.saldo)} a favor.` : 'Está al día.'}
-      pie={<Button onClick={confirmar}>Registrar pago</Button>}
+      pie={
+        <Button onClick={confirmar} disabled={exagerado && !seguro}>
+          Registrar pago
+        </Button>
+      }
     >
       <div className="grid grid-cols-2 gap-4">
         <Campo id="pago-monto" label="Monto ($)" error={intento ? errMonto : undefined}>
-          <InputNumero id="pago-monto" value={monto} onValueChange={setMonto} autoFocus {...invalido('pago-monto', intento ? errMonto : undefined)} />
+          <InputNumero
+            id="pago-monto"
+            value={monto}
+            onValueChange={(v) => {
+              setMonto(v);
+              setSeguro(false);
+            }}
+            autoFocus
+            {...invalido('pago-monto', intento ? errMonto : undefined)}
+          />
         </Campo>
         <Campo id="pago-medio" label="Medio">
           <Select value={medio} onValueChange={(v) => setMedio(v as Medio)}>
@@ -463,7 +502,24 @@ export function PagoDialog({ cliente, k, abierto, onCerrar }: { cliente: Cliente
         <ElegirVendedor value={vendedor} onChange={setVendedor} />
       </div>
       {k.saldo > 0 && c > 0 && c < k.saldo && <p className="text-sm text-tinta-media">Pago parcial: le quedan <b className="tabular">{formatoCentavos(queda)}</b>.</p>}
-      {c > 0 && queda < 0 && <Aviso>Paga {formatoCentavos(-queda)} de más: le quedan a favor y se descuentan del próximo fiado.</Aviso>}
+      {c > 0 && queda < 0 && incobrable > 0 && (
+        <Aviso>
+          Tiene {formatoCentavos(incobrable)} dados por incobrable.
+          <label className="mt-2 flex items-center gap-2 font-medium">
+            <Checkbox checked={recuperar} onCheckedChange={(v) => setRecuperar(v === true)} /> Recuperar {formatoCentavos(Math.min(-queda, incobrable))} de esa deuda en vez de dejarlos a favor
+          </label>
+        </Aviso>
+      )}
+      {exagerado ? (
+        <Aviso tono="error">
+          Paga {formatoCentavos(c)} y {k.saldo > 0 ? `debe ${formatoCentavos(k.saldo)}` : 'no debe nada'}: le quedarían {formatoCentavos(-resto)} a favor. Revisá que el monto no tenga un cero de más.
+          <label className="mt-2 flex items-center gap-2 font-medium">
+            <Checkbox checked={seguro} onCheckedChange={(v) => setSeguro(v === true)} /> El monto es correcto
+          </label>
+        </Aviso>
+      ) : (
+        c > 0 && resto < 0 && <Aviso>Paga {formatoCentavos(-resto)} de más: le quedan a favor y se descuentan del próximo fiado.</Aviso>
+      )}
       <Campo id="pago-nota" label="Nota" opcional>
         <Input id="pago-nota" value={nota} onChange={(e) => setNota(e.target.value)} />
       </Campo>
@@ -494,13 +550,15 @@ export function AjusteDialog({ cliente, k, modo, onCerrar }: { cliente: Cliente;
 
   const errMonto = montoError(monto);
   const errMotivo = motivo.trim() ? undefined : 'Escribí el motivo: queda en la cuenta';
-  const errFecha = fechaOk(fecha, hoy()) ? undefined : 'Elegí una fecha que no sea futura';
+  const errFecha = fechaOk(fecha, hoy()) ? undefined : ERR_FECHA;
 
   const confirmar = () => {
     setIntento(true);
     if (!modo || errMonto || errMotivo || errFecha) return; // ya aplicado y cerrándose: evita ajuste duplicado
     const c = aCentavos(monto) * (sentido === 'restar' ? -1 : 1);
-    const m = validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'ajuste', monto: c, fecha, registrado: ahora(), nota: motivo.trim(), vendedor: null, anulado: null });
+    // La palabra en el motivo es lo que después permite recuperarlo con un pago (incobrablePendiente).
+    const nota = modo === 'incobrable' && !/incobrable/i.test(motivo) ? `Incobrable: ${motivo.trim()}` : motivo.trim();
+    const m = validar({ id: nuevoId(), clienteId: cliente.id, tipo: 'ajuste', monto: c, fecha, registrado: ahora(), nota, vendedor: null, anulado: null });
     if (!m) return;
     const cerrar = modo === 'incobrable' && archivar;
     cambiar(

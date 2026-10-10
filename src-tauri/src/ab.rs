@@ -11,6 +11,7 @@ use crate::red::{self, falla};
 const API: &str = "https://abfundas.estudiorocha.ar";
 const NOMBRE: &str = "AB";
 const POR_PAGINA: &str = "60";
+const SIN_LISTA: &str = "AB cambió su página: no informa la lista de precios de la cuenta.";
 
 /// Lo que devuelve el login y hace falta para los precios.
 #[derive(Clone)]
@@ -27,17 +28,17 @@ fn sesion() -> &'static Mutex<Option<Sesion>> {
   S.get_or_init(|| Mutex::new(None))
 }
 
-fn cliente() -> &'static reqwest::Client {
+fn cliente() -> Result<&'static reqwest::Client, String> {
   static CLIENTE: OnceLock<reqwest::Client> = OnceLock::new();
-  CLIENTE.get_or_init(|| red::cliente(None))
+  red::compartido(&CLIENTE, || red::crear(None))
 }
 
 /// La lista de precios viene como texto o como número según el endpoint.
-fn lista(v: &Value) -> String {
+fn lista(v: &Value) -> Option<String> {
   match v {
-    Value::String(s) if !s.is_empty() => s.clone(),
-    Value::Number(n) => n.to_string(),
-    _ => "1".into(),
+    Value::String(s) if !s.is_empty() => Some(s.clone()),
+    Value::Number(n) => Some(n.to_string()),
+    _ => None,
   }
 }
 
@@ -51,7 +52,7 @@ fn id(v: &Value) -> String {
 
 async fn login() -> Result<Sesion, String> {
   let cuenta = credenciales::leer("ab")?.ok_or(SIN_SESION)?;
-  let r = cliente()
+  let r = cliente()?
     .post(format!("{API}/account/login"))
     .json(&json!({ "usuario": cuenta.usuario, "password": cuenta.clave }))
     .send()
@@ -70,11 +71,17 @@ async fn login() -> Result<Sesion, String> {
     return Err(rechazada(msg.unwrap_or("AB no aceptó el usuario o la contraseña.")));
   };
   let usuario = if d["id"].is_null() { id(&d["_id"]) } else { id(&d["id"]) };
-  Ok(Sesion { token: token.into(), usuario, lista: lista(&d["lista_de_precio"]), descuentos: d["descuento"].clone() })
+  // Sin `descuento` va null y la interfaz lo rechaza: tomarlo como "sin descuentos" inflaría los costos.
+  Ok(Sesion { token: token.into(), usuario, lista: lista(&d["lista_de_precio"]).ok_or(SIN_LISTA)?, descuentos: d["descuento"].clone() })
 }
 
 async fn productos(s: &Sesion, texto: &str) -> Result<reqwest::Response, String> {
-  cliente()
+  // La sesión del login a mano puede venir sin lista: se descarta en vez de buscar con precios de otra lista.
+  if s.lista.is_empty() {
+    olvidar();
+    return Err(SIN_LISTA.into());
+  }
+  cliente()?
     .get(format!("{API}/product"))
     .query(&[("filter[search]", texto), ("filter[list]", &s.lista), ("limit", POR_PAGINA), ("page", "1")])
     .bearer_auth(&s.token)
@@ -119,7 +126,7 @@ pub async fn ab_buscar(texto: String) -> Result<String, String> {
 pub async fn ab_carrito(producto: Value, cantidad: u32) -> Result<(), String> {
   let id = producto["_id"].as_str().ok_or_else(|| format!("{NOMBRE} cambió su página: el artículo no trae su identificador."))?.to_string();
   let (s, r) = con_sesion(|s| async move {
-    cliente()
+    cliente()?
       .get(format!("{API}/cart"))
       .query(&[("user", s.usuario.as_str()), ("mode", "normal")])
       .bearer_auth(&s.token)
@@ -140,7 +147,7 @@ pub async fn ab_carrito(producto: Value, cantidad: u32) -> Result<(), String> {
       i
     }
     None => {
-      let precio = producto["lista_de_precios"].as_array().and_then(|l| l.iter().find(|p| lista(&p["list_id"]) == s.lista)).cloned();
+      let precio = producto["lista_de_precios"].as_array().and_then(|l| l.iter().find(|p| lista(&p["list_id"]).as_deref() == Some(s.lista.as_str()))).cloned();
       let Some(precio) = precio else { return Err(format!("{NOMBRE} no tiene precio de tu lista para este artículo.")) };
       let mut i = producto;
       i["price"] = precio["precio"].clone();
@@ -149,7 +156,7 @@ pub async fn ab_carrito(producto: Value, cantidad: u32) -> Result<(), String> {
       i
     }
   };
-  let r = cliente()
+  let r = cliente()?
     .patch(format!("{API}/cart/item"))
     .json(&json!({ "user": s.usuario, "mode": "normal", "item": item }))
     .bearer_auth(&s.token)
@@ -164,7 +171,7 @@ pub(crate) fn usar(datos: &str) {
   let Ok(v) = serde_json::from_str::<Value>(datos) else { return };
   let Some(token) = v["token"].as_str().filter(|t| !t.is_empty()) else { return };
   if let Ok(mut s) = sesion().lock() {
-    *s = Some(Sesion { token: token.into(), usuario: id(&v["usuario"]), lista: lista(&v["lista"]), descuentos: v["descuentos"].clone() });
+    *s = Some(Sesion { token: token.into(), usuario: id(&v["usuario"]), lista: lista(&v["lista"]).unwrap_or_default(), descuentos: v["descuentos"].clone() });
   }
 }
 

@@ -8,6 +8,10 @@ use crate::cba;
 use crate::credenciales::{self, rechazada, SIN_SESION};
 
 const VENTANA_MOTOR: &str = "cba-motor";
+const MAX_UNIDADES: u32 = 50;
+
+// Búsquedas, paginado y carrito comparten la única ventana del motor: de a una, para que no se mezclen las páginas.
+static MOTOR: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 // El paginado y el orden del catálogo son eventos AJAX de GeneXus con tokens firmados: en vez de imitarlos,
 // una ventana oculta carga el catálogo real y aprieta sus botones. Sin capabilities: no puede llamar a la app.
@@ -106,17 +110,20 @@ async fn entrar(v: &WebviewWindow) -> Result<(), String> {
   if !esperar(v, listo, 20).await {
     return Err(rechazada("CM no cargó su página de ingreso (está lenta o cambió). Entrá a mano."));
   }
-  // JSON escapa usuario y clave como literales de JS.
+  // JSON escapa usuario y clave como literales de JS. La clave sólo se escribe si la página sigue siendo la de CM.
   let js = format!(
-    "(() => {{ try {{ const p = (id, val) => {{ const e = document.getElementById(id); e.value = val; e.dispatchEvent(new Event('change', {{ bubbles: true }})); }};
+    "(() => {{ if (location.origin !== {}) return 'ORIGEN'; try {{ const p = (id, val) => {{ const e = document.getElementById(id); e.value = val; e.dispatchEvent(new Event('change', {{ bubbles: true }})); }};
      p('vUSERNAME', {}); p('vUSERPASSWORD', {});
      const k = document.getElementById('vKEEPMELOGGEDIN'); if (k && !k.checked) k.click();
      document.getElementById('BTNENTER').click(); return 'ok'; }} catch (e) {{ return 'NO'; }} }})()",
+    serde_json::to_string(&cba("").origin().ascii_serialization()).map_err(|e| e.to_string())?,
     serde_json::to_string(&cuenta.usuario).map_err(|e| e.to_string())?,
     serde_json::to_string(&cuenta.clave).map_err(|e| e.to_string())?,
   );
-  if evaluar(v, &js).await.as_deref() != Some("ok") {
-    return Err(rechazada("CM cambió su página de ingreso: no se encontraron los campos de usuario y contraseña. Entrá a mano."));
+  match evaluar(v, &js).await.as_deref() {
+    Some("ok") => {}
+    Some("ORIGEN") => return Err(rechazada("CM mandó el ingreso a otro sitio: no se cargó la contraseña. Entrá a mano.")),
+    _ => return Err(rechazada("CM cambió su página de ingreso: no se encontraron los campos de usuario y contraseña. Entrá a mano.")),
   }
   // Después del login el sitio va al home interno.
   if esperar(v, "(() => location.pathname.toLowerCase().endsWith('/homeinterno.aspx') ? 'SI' : 'NO')()", 20).await {
@@ -135,6 +142,7 @@ async fn entrar(v: &WebviewWindow) -> Result<(), String> {
 /// Si no hay sesión y hay cuenta guardada, entra solo y repite la búsqueda.
 #[tauri::command]
 pub async fn cba_buscar(app: AppHandle, texto: String) -> Result<String, String> {
+  let _motor = MOTOR.lock().await;
   let mut url = cba("catalogo.aspx");
   url.query_pairs_mut().append_pair("OrigenBusqueda", "1").append_pair("Id", "0").append_pair("Busqueda", &texto);
   let v = match app.get_webview_window(VENTANA_MOTOR) {
@@ -170,6 +178,7 @@ pub(crate) enum Accion {
 /// Pagina u ordena la última búsqueda. Sólo estos botones: nada que toque el carrito.
 #[tauri::command]
 pub async fn cba_accion(app: AppHandle, accion: Accion) -> Result<String, String> {
+  let _motor = MOTOR.lock().await;
   let v = app.get_webview_window(VENTANA_MOTOR).ok_or("Buscá algo primero.")?;
   let (id, efecto) = match accion {
     Accion::Siguiente => ("BTNSIGUIENTE", "e.click()".to_string()),
@@ -193,30 +202,43 @@ pub async fn cba_accion(app: AppHandle, accion: Accion) -> Result<String, String
 /// Verifica que la cantidad de la fila haya subido: si no, el sitio no lo aceptó (por ejemplo, sin stock).
 #[tauri::command]
 pub async fn cba_carrito(app: AppHandle, codigo: String, cantidad: u32) -> Result<(), String> {
+  // Cada unidad es un clic real en el sitio.
+  if !(1..=MAX_UNIDADES).contains(&cantidad) {
+    return Err(format!("A CM se suman de 1 a {MAX_UNIDADES} unidades por vez."));
+  }
+  let _motor = MOTOR.lock().await;
   let v = app.get_webview_window(VENTANA_MOTOR).ok_or("Buscá algo primero.")?;
   let codigo = serde_json::to_string(&codigo).map_err(|e| e.to_string())?;
   let fila = format!(
     "const o = window.gx && gx.pO && gx.pO.WebComponents && gx.pO.WebComponents.W0006W0058; const i = o && o.AV96Productos ? o.AV96Productos.findIndex((p) => String(p.ProductoId).trim() === {codigo}) : -1; \
      const id = (c) => document.getElementById('W0006W0058' + c + '_' + String(i + 1).padStart(4, '0')); const cant = () => Number((id('vCANTIDAD') || {{}}).value) || 0;"
   );
-  for _ in 0..cantidad {
+  // Si corta a la mitad, el error dice cuántas unidades ya quedaron en el carrito.
+  let parcial = |sumadas: u32, e: String| {
+    if sumadas == 0 {
+      return e;
+    }
+    let e = if e == "SIN_SESION" { "CM cerró la sesión.".to_string() } else { e };
+    format!("{e} Ya se habían sumado {sumadas} de {cantidad} unidades: revisá el carrito en la página.")
+  };
+  for sumadas in 0..cantidad {
     let js = format!(
       "(() => {{ {fila} if (i < 0) return 'FALTA'; const a = id('BTNSUMACANT') && id('BTNSUMACANT').querySelector('a'); if (!a || !window.__cba) return 'NO'; \
        __cba.antes = __cba.hechas; __cba.esperando = true; a.click(); return 'SI:' + cant(); }})()"
     );
     let antes: u32 = match evaluar(&v, &js).await.as_deref() {
-      Some("FALTA") => return Err("El artículo ya no está en la página de CM: buscalo de nuevo.".into()),
+      Some("FALTA") => return Err(parcial(sumadas, "El artículo ya no está en la página de CM: buscalo de nuevo.".into())),
       Some(r) if r.starts_with("SI:") => r[3..].parse().unwrap_or(0),
-      Some(_) => return Err("CM cambió su página: no se encontró el botón para sumar al carrito.".into()),
-      None => return Err("CM no respondió a tiempo. Probá de nuevo.".into()),
+      Some(_) => return Err(parcial(sumadas, "CM cambió su página: no se encontró el botón para sumar al carrito.".into())),
+      None => return Err(parcial(sumadas, "CM no respondió a tiempo. Probá de nuevo.".into())),
     };
-    leer(&v).await?;
+    leer(&v).await.map_err(|e| parcial(sumadas, e))?;
     // El + dispara más de un pedido al servidor: se espera a que terminen todos.
     tokio::time::sleep(Duration::from_millis(300)).await;
     esperar(&v, "(() => window.__cba && __cba.pend === 0 ? 'SI' : 'NO')()", 10).await;
     let despues: u32 = evaluar(&v, &format!("(() => {{ {fila} return String(cant()); }})()")).await.and_then(|r| r.parse().ok()).unwrap_or(0);
     if despues <= antes {
-      return Err("CM no sumó el artículo al carrito (puede no tener stock).".into());
+      return Err(parcial(sumadas, "CM no sumó el artículo al carrito (puede no tener stock).".into()));
     }
   }
   Ok(())

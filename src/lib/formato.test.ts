@@ -44,4 +44,16 @@ describe('formato', () => {
     expect(parsearDecimal('1,5')).toBe(1.5);
     expect(parsearPesos('12345678901234567890')).toBeNull();
   });
+
+  it('pesos pegados con centavos se redondean al peso, no se multiplican por 100', () => {
+    expect(parsearPesos('1.234,56')).toBe(1235);
+    expect(parsearPesos('$ 1.234.567,89')).toBe(1234568);
+    expect(parsearPesos('1.234,4')).toBe(1234);
+    expect(parsearPesos('1.234,5')).toBe(1235);
+  });
+
+  it('un grupo de miles no empieza con 0', () => {
+    expect(parsearDecimal('0.750')).toBe(0.75);
+    expect(parsearDecimal('0.5')).toBe(0.5);
+  });
 });

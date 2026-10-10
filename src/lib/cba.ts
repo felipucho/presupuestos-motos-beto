@@ -70,10 +70,12 @@ export function leerJson(sitio: string, texto: string): unknown {
   }
 }
 
-/** Número de un precio escrito "4864.99", "4.864,99" o "$ 4,864.99": el último separador seguido de 1 o 2 dígitos es el decimal. */
+/** Número de un precio escrito "4864.99", "4.864,99" o "$ 4,864.99": el último separador seguido de 1 o 2 dígitos es el decimal.
+ * NaN si no hay número o hay más de uno ("$ 1.500 $ 1.200", "$ 1.234,56 x2"): juntar sus dígitos daría un precio inventado. */
 export function aNumero(s: string): number {
-  const t = s.replace(/[^\d.,]/g, '');
-  if (!/\d/.test(t)) return NaN;
+  const numeros = s.match(/\d+(?:[.,]\d+)*/g);
+  if (numeros?.length !== 1) return NaN;
+  const t = numeros[0]!;
   const m = /[.,](\d{1,2})$/.exec(t);
   const entero = (m ? t.slice(0, m.index) : t).replace(/[.,]/g, '');
   return Number(m ? `${entero}.${m[1]}` : entero);
@@ -111,7 +113,7 @@ export function leerCatalogo(datos: unknown): Resultado {
   const r = catalogoSchema.safeParse(datos);
   if (!r.success) throw cambio('CM', r.error);
   const b = bonifSchema.safeParse(r.data.bonificaciones);
-  const bonifs = new Map(b.success ? b.data.SDT_BonificacionesBolsa.map((x) => [x.vArticulo, Number(x.vBon) || 0] as const) : []);
+  const bonifs = new Map(b.success ? b.data.SDT_BonificacionesBolsa.map((x) => [x.vArticulo, aNumero(x.vBon)] as const) : []);
   return {
     total: r.data.total,
     porPagina: r.data.porPagina,
@@ -120,9 +122,10 @@ export function leerCatalogo(datos: unknown): Resultado {
     articulos: cadaUno(
       'CM',
       // El semáforo va por posición: se empareja antes de saltear artículos ilegibles.
-      r.data.productos.map((x, i) => ({ ...(x as object), __fila: i })),
-      productoSchema.extend({ __fila: z.number() }),
-    ).map(({ __fila: i, ...p }) => ({
+      // Sin bonificación en la lista es 0; una ilegible (NaN) no pasa z.number() y el artículo se saltea, en vez de costo sin descuento.
+      r.data.productos.map((x, i) => ({ ...(x as object), __fila: i, __bonif: bonifs.get((x as { ProductoId?: string }).ProductoId ?? '') ?? 0 })),
+      productoSchema.extend({ __fila: z.number(), __bonif: z.number() }),
+    ).map(({ __fila: i, __bonif: bonif, ...p }) => ({
       codigo: p.ProductoId.trim(),
       detalle: p.ProductoDetalle.trim(),
       estado: p.ProductoEstadoNombre,
@@ -132,7 +135,7 @@ export function leerCatalogo(datos: unknown): Resultado {
       empaque: p.ProductoDetalleEmpaque.trim(),
       infoAdicional: p.ProductoInfoAdicional.trim(),
       lista: p.ProductoPrecio,
-      bonif: bonifs.get(p.ProductoId) ?? 0,
+      bonif,
       carrito: {},
     })),
   };

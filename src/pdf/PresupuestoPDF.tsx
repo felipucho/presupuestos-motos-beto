@@ -9,7 +9,7 @@ import b400 from '@/assets/fuentes/Bitter_400Regular.ttf';
 import b400i from '@/assets/fuentes/Bitter_400Regular_Italic.ttf';
 import logoTinta from '@/assets/marca/motos-beto-tinta.png';
 import type { LineaPago, Resumen } from '@/lib/calculos';
-import { enlaceWhatsapp, etiquetaPlan, formatoFecha, formatoMoneda, formatoNumero } from '@/lib/formato';
+import { enlaceWhatsapp, etiquetaPlan, formatoFecha, formatoMoneda, formatoNumero, formatoPesos } from '@/lib/formato';
 import type { Local } from '@/lib/schema';
 
 Font.register({
@@ -163,7 +163,7 @@ function FilaPago({ linea, i, descuento }: { linea: LineaPago; i: number; descue
         {contado && descuento > 0 ? <Text style={s.sub}>{formatoNumero(descuento)} % de descuento</Text> : null}
       </View>
       <Text style={[s.colMonto, s.montoCelda]}>{formatoMoneda(linea.precioMoto)}</Text>
-      <Text style={[s.colMonto, s.montoCelda]}>{linea.valorCuota === null ? '—' : formatoMoneda(linea.valorCuota)}</Text>
+      <Text style={[s.colMonto, s.montoCelda]}>{linea.valorCuota === null ? '—' : formatoPesos(linea.valorCuota)}</Text>
       <Text style={[s.colMonto, s.totalCelda]}>{formatoMoneda(linea.totalConGastos)}</Text>
     </View>
   );

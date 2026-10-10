@@ -3,12 +3,11 @@ import { open } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { z } from 'zod';
 import { guardarArchivo } from './archivos';
+import { contenidoBackup as contenido, TIPO_BACKUP as TIPO } from './copia-diaria';
 import { fiadosSchema, type Fiados } from './fiados';
 import { fechaCompacta } from './formato';
 import { registroSchema, type Registro } from './historial';
 import { validarConfig, type Config } from './schema';
-
-const TIPO = 'motos-beto-backup';
 
 export interface Backup {
   config: Config;
@@ -16,14 +15,28 @@ export interface Backup {
   fiados: Fiados;
 }
 
-/** Lo que trae un archivo. historial y fiados son null en un backup viejo, que sólo tenía la configuración. */
-export type Importado = { config: Config; historial: Registro[] | null; fiados: Fiados | null };
+/**
+ * Lo que trae un archivo. historial y fiados son null en un backup viejo, que sólo tenía la configuración.
+ * config e historial son null en una copia de sólo fiados (la de GitHub o la diaria de versiones anteriores).
+ */
+export type Importado = { config: Config | null; historial: Registro[] | null; fiados: Fiados | null };
 
 const completoSchema = z.object({ tipo: z.literal(TIPO), version: z.literal(1), historial: z.array(registroSchema), fiados: fiadosSchema });
 
-/** Valida un backup completo o uno viejo de sólo configuración. Lanza Error con un mensaje legible. */
+const invalido = (e: z.ZodError) => {
+  const p = e.issues[0];
+  return new Error(`Dato inválido en «${p?.path.join('.') ?? '?'}»: ${p?.message ?? 'formato incorrecto'}.`);
+};
+
+/** Valida un backup completo, uno viejo de sólo configuración o una copia de sólo fiados. Lanza Error con un mensaje legible. */
 export function leerDatosBackup(datos: unknown): Importado {
-  const o = (typeof datos === 'object' && datos !== null ? datos : {}) as { tipo?: unknown; config?: unknown };
+  const o = (typeof datos === 'object' && datos !== null ? datos : {}) as { tipo?: unknown; config?: unknown; fiados?: unknown; dia?: unknown };
+  // Copia de GitHub ({tipo: 'motos-beto-fiados', fiados}) o copia diaria vieja ({dia, fiados}).
+  if (o.tipo === 'motos-beto-fiados' || (o.tipo === undefined && o.config === undefined && o.fiados !== undefined)) {
+    const r = fiadosSchema.safeParse(o.fiados);
+    if (!r.success) throw invalido(r.error);
+    return { config: null, historial: null, fiados: r.data };
+  }
   if (o.tipo !== TIPO) {
     const r = validarConfig(datos);
     if (!r.ok) throw new Error(r.error);
@@ -32,14 +45,9 @@ export function leerDatosBackup(datos: unknown): Importado {
   const c = validarConfig(o.config);
   if (!c.ok) throw new Error(c.error);
   const r = completoSchema.safeParse(datos);
-  if (!r.success) {
-    const p = r.error.issues[0];
-    throw new Error(`Dato inválido en «${p?.path.join('.') ?? '?'}»: ${p?.message ?? 'formato incorrecto'}.`);
-  }
+  if (!r.success) throw invalido(r.error);
   return { config: c.config, historial: r.data.historial, fiados: r.data.fiados };
 }
-
-const contenido = (b: Backup) => JSON.stringify({ tipo: TIPO, version: 1, creado: new Date().toISOString(), ...b }, null, 2);
 
 /** Devuelve la ruta elegida, o null si se canceló. */
 export async function exportarBackup(b: Backup): Promise<string | null> {

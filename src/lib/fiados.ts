@@ -73,7 +73,13 @@ export interface Fiados {
 export const FIADOS_VACIO: Fiados = { clientes: [], movimientos: [] };
 
 /** Valida todo junto (para importar un backup): un solo dato malo invalida el archivo. */
-export const fiadosSchema = z.object({ clientes: z.array(clienteSchema), movimientos: z.array(movimientoSchema) });
+export const fiadosSchema = z.object({ clientes: z.array(clienteSchema), movimientos: z.array(movimientoSchema) }).superRefine((f, ctx) => {
+  // Al cargar, un movimiento sin cliente se deja afuera; al importar se rechaza el archivo entero.
+  const ids = new Set(f.clientes.map((c) => c.id));
+  f.movimientos.forEach((m, i) => {
+    if (!ids.has(m.clienteId)) ctx.addIssue({ code: 'custom', path: ['movimientos', i, 'clienteId'], message: 'Movimiento de un cliente que no está en el archivo' });
+  });
+});
 
 export const aCentavos = (pesos: number) => redondear(pesos * 100);
 
@@ -176,6 +182,30 @@ export function saldosCorridos(movimientos: readonly Movimiento[]): Map<string, 
       .sort(cronologico)
       .map((m) => [m.id, (saldo += importe(m))] as const),
   );
+}
+
+/**
+ * Saldos para el recibo de un pago. `saldo` es el actual (al día de hoy), no el corrido a la fecha
+ * del pago: un pago con fecha anterior a otros fiados dejaría un "pendiente" falso. `anterior` sólo
+ * se da si después del pago no se registró ni anuló nada, porque si no saldo + monto ya no es lo
+ * que debía justo antes de pagar.
+ */
+export function saldosRecibo(movimientos: readonly Movimiento[], pago: Extract<Movimiento, { tipo: 'pago' }>): { anterior: number | null; saldo: number } {
+  const saldo = movimientos.reduce((a, m) => a + (m.anulado ? 0 : importe(m)), 0);
+  const posterior = movimientos.some((m) => m.id !== pago.id && (m.registrado > pago.registrado || (m.anulado !== null && m.anulado.fecha > pago.registrado)));
+  return { anterior: posterior ? null : saldo + pago.monto, saldo };
+}
+
+// Se reconoce por el motivo: "Dar por incobrable" siempre lo deja con esa palabra.
+const esIncobrable = (m: Movimiento) => m.tipo === 'ajuste' && !m.anulado && /incobrable/i.test(m.nota);
+
+/** Lo dado por incobrable que todavía no se recuperó con un "Recupero de incobrable". */
+export const incobrablePendiente = (movimientos: readonly Movimiento[]) => Math.max(0, -movimientos.filter(esIncobrable).reduce((a, m) => a + importe(m), 0));
+
+/** Fiado fuera de lo normal para el cliente: más de 3 veces su fiado más grande, o más de $ 1.000.000 si nunca fió. */
+export function fiadoInusual(movimientos: readonly Movimiento[], total: number): boolean {
+  const mayor = movimientos.reduce((a, m) => (m.tipo === 'cargo' && !m.anulado ? Math.max(a, totalItems(m.items)) : a), 0);
+  return total > (mayor > 0 ? mayor * 3 : 1_000_000_00);
 }
 
 const digitos = (t: string) => t.replace(/\D/g, '');

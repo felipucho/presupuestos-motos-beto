@@ -30,7 +30,7 @@ import { quitarPor } from '@/lib/listas';
 import { useFiados } from '@/lib/fiados-store';
 import { formatoCentavos } from '@/lib/formato';
 import { cn } from '@/lib/utils';
-import { avisarWhatsapp, Dato, detalleMovimiento, estadoDeCuenta, guardarComprobante, recibo, Saldo, vale } from './comun';
+import { avisarWhatsapp, Dato, detalleMovimiento, estadoDeCuenta, guardarComprobante, numero, recibo, Saldo, vale } from './comun';
 import { AjusteDialog, AnularDialog, ClienteDialog, DevolverDialog, PagoDialog, UnirDialog } from './dialogos';
 
 const cronologicoInverso = (a: Movimiento, b: Movimiento) => b.fecha.localeCompare(a.fecha) || b.registrado.localeCompare(a.registrado);
@@ -221,6 +221,7 @@ export function ClienteDetalle({ id, onVolver, onCargar, onAbrir }: { id: string
                                 m.tipo === 'cargo' && queda !== undefined && queda < imp && `Le falta pagar ${formatoCentavos(queda)}`,
                                 m.tipo !== 'ajuste' && m.nota,
                                 m.vendedor && `Atendió ${m.vendedor.nombre}`,
+                                m.tipo !== 'ajuste' && `N° ${numero(m)}`,
                               ]
                                 .filter(Boolean)
                                 .join(' · ')}
@@ -244,7 +245,7 @@ export function ClienteDetalle({ id, onVolver, onCargar, onAbrir }: { id: string
                                   </>
                                 )}
                                 {m.tipo === 'pago' && (
-                                  <Button variant="ghost" size="icon-sm" title="Recibo (PDF)" aria-label="Guardar recibo en PDF" onClick={() => pdf(recibo(config.local, cliente, m, movs))}>
+                                  <Button variant="ghost" size="icon-sm" title="Recibo (PDF)" aria-label="Guardar recibo en PDF" onClick={() => pdf(recibo(config.local, cliente, m, movs, hoy))}>
                                     <FileText />
                                   </Button>
                                 )}

@@ -55,10 +55,15 @@ export function Historial() {
     const todos = registros ?? [];
     const tramo = rango(periodo, ref);
     const enPeriodo = todos.filter((r) => enTramo(r, tramo));
-    const anterior = periodo === 'todo' ? null : metricas(todos.filter((r) => enTramo(r, rango(periodo, mover(periodo, ref, -1)))));
+    // Con el período en curso se compara contra el mismo tramo transcurrido del anterior, no contra el anterior completo.
+    const ahora = Date.now();
+    const previo = rango(periodo, mover(periodo, ref, -1));
+    const enCurso = tramo !== null && tramo.desde.getTime() <= ahora && ahora < tramo.hasta.getTime();
+    if (previo && enCurso) previo.hasta = new Date(Math.min(previo.hasta.getTime(), previo.desde.getTime() + (ahora - tramo.desde.getTime())));
+    const anterior = periodo === 'todo' ? null : metricas(todos.filter((r) => enTramo(r, previo)));
     const primero = todos[0] ? new Date(todos[0].fecha) : null;
     const barras = tramos(periodo, ref, primero, new Date()).map((t) => ({ ...t, cantidad: enPeriodo.filter((r) => enTramo(r, t)).length }));
-    return { enPeriodo, m: metricas(enPeriodo), anterior, barras };
+    return { enPeriodo, m: metricas(enPeriodo), anterior, enCurso, barras };
   }, [registros, periodo, ref]);
 
   const filas = useMemo(() => {
@@ -83,7 +88,8 @@ export function Historial() {
       .catch((e: unknown) => toast.error('No se pudo borrar', { description: String(e) }));
   };
 
-  const { m, anterior } = datos;
+  const { m, anterior, enCurso } = datos;
+  const contra = enCurso ? `${info.anterior} a esta altura` : info.anterior;
   const diferencia = anterior ? m.presupuestos - anterior.presupuestos : null;
   const maxBarra = Math.max(1, ...datos.barras.map((b) => b.cantidad));
   const unidad =
@@ -149,7 +155,7 @@ export function Historial() {
               titulo="Presupuestos"
               valor={formatoNumero(m.presupuestos)}
               detalle={
-                diferencia === null ? null : diferencia === 0 ? `Igual que ${info.anterior}` : `${diferencia > 0 ? '+' : '−'}${formatoNumero(Math.abs(diferencia))} que ${info.anterior}`
+                diferencia === null ? null : diferencia === 0 ? `Igual que ${contra}` : `${diferencia > 0 ? '+' : '−'}${formatoNumero(Math.abs(diferencia))} que ${contra}`
               }
               tono={diferencia === null || diferencia === 0 ? undefined : diferencia > 0 ? 'bien' : 'mal'}
             />
@@ -273,9 +279,11 @@ export function Historial() {
                         </TableCell>
                         <TableCell className="align-top">
                           <div className="flex justify-end gap-0.5 opacity-70 transition-opacity duration-150 group-hover/fila:opacity-100 focus-within:opacity-100">
-                            <Button variant="ghost" size="icon-sm" aria-label={`Abrir PDF de ${r.cliente.nombre}`} title="Abrir PDF" onClick={() => abrir(r)}>
-                              <FileText />
-                            </Button>
+                            {r.archivo && (
+                              <Button variant="ghost" size="icon-sm" aria-label={`Abrir PDF de ${r.cliente.nombre}`} title="Abrir PDF" onClick={() => abrir(r)}>
+                                <FileText />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon-sm"

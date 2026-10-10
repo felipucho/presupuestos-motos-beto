@@ -49,6 +49,14 @@ describe('Córdoba Motos', () => {
     expect(precioConIva(2864.8, 0)).toBeCloseTo(2864.8, 2);
   });
 
+  it('lee la bonificación con coma decimal y saltea el artículo si no se puede leer', () => {
+    const bonif = (vBon: string) => ({ ...datos, bonificaciones: { SDT_BonificacionesBolsa: [{ vArticulo: 'J7456SP', vBon }] } });
+    expect(leerCatalogo(bonif('10,5')).articulos[0]).toMatchObject({ codigo: 'J7456SP', bonif: 10.5 });
+    // Ilegible no es 0: el artículo no se muestra con el costo sin descuento.
+    expect(leerCatalogo(bonif('N/D')).articulos.map((a) => a.codigo)).toEqual(['SINBONIF']);
+    expect(() => leerCatalogo({ ...bonif('N/D'), productos: [producto] })).toThrow('cambió su página');
+  });
+
   it('avisa si la página cambió', () => {
     expect(() => leerCatalogo({})).toThrow('cambió su página');
     expect(() => leerCatalogo({ ...datos, productos: [{ ProductoId: 1 }] })).toThrow('cambió su página');

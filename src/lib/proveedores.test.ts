@@ -53,6 +53,13 @@ describe('Neumat', () => {
       .replace('col textTituloProductos', 'col-12 textTituloProductos');
     expect(leerNeumat(`<div id='listArticulos'>${t}</div>`).articulos[0]).toMatchObject({ codigo: '4020100', detalle: 'KIT SMASH', lista: 4864.99 });
   });
+
+  it('en oferta lee el precio actual, no el tachado', () => {
+    for (const tachado of ['<del>$ 1.500,00</del>', '<s>$ 1.500,00</s>']) {
+      const t = tarjeta('4020100', 'KIT', '1.200,00', 'Stock').replace('<b>$ 1.200,00</b>', `${tachado} <b>$ 1.200,00</b>`);
+      expect(leerNeumat(`<div id="listArticulos">${t}</div>`).articulos[0]).toMatchObject({ lista: 1200 });
+    }
+  });
 });
 
 const producto = {
@@ -100,13 +107,18 @@ describe('ab Repuestos', () => {
   });
 
   it('avisa si la respuesta no tiene la forma esperada', () => {
-    expect(() => leerAb({ lista: '1', respuesta: {} })).toThrow(/cambió su página/);
+    expect(() => leerAb({ lista: '1', descuentos: [], respuesta: {} })).toThrow(/cambió su página/);
     // Si todos los artículos vienen sin título, el error dice qué campo falta.
-    expect(() => leerAb({ lista: '1', respuesta: { data: [{ ...producto, titulo: undefined }] } })).toThrow(/«titulo»/);
+    expect(() => leerAb({ lista: '1', descuentos: [], respuesta: { data: [{ ...producto, titulo: undefined }] } })).toThrow(/«titulo»/);
+  });
+
+  it('sin la lista de descuentos avisa en vez de tomar bonificación 0', () => {
+    expect(() => leerAb({ lista: '1', descuentos: null, respuesta: { data: [producto] } })).toThrow(/«descuentos»/);
+    expect(() => leerAb({ lista: '1', respuesta: { data: [producto] } })).toThrow(/«descuentos»/);
   });
 
   it('saltea un artículo roto sin perder los demás', () => {
-    const r = leerAb({ lista: '1', respuesta: { data: [{ sku: 'roto' }, producto] } });
+    const r = leerAb({ lista: '1', descuentos: [], respuesta: { data: [{ sku: 'roto' }, producto] } });
     expect(r.articulos.map((a) => a.codigo)).toEqual(['0015617']);
     expect(r.total).toBe(1);
   });
@@ -161,6 +173,13 @@ describe('utilidades', () => {
     expect(aNumero('4,864.9')).toBe(4864.9);
     expect(aNumero('1.234')).toBe(1234);
     expect(aNumero('Consultar')).toBeNaN();
+    expect(aNumero('$ 1.234,56')).toBe(1234.56);
+    expect(aNumero('$ 1.234')).toBe(1234);
+  });
+
+  it('con más de un número no inventa un precio', () => {
+    expect(aNumero('$ 1.500,00 $ 1.200,00')).toBeNaN();
+    expect(aNumero('$ 1.234,56 x2')).toBeNaN();
   });
 
   it('avisa si la respuesta no es JSON', () => {

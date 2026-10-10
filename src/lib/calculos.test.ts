@@ -22,8 +22,8 @@ describe('calcularPresupuesto', () => {
     });
     // Ordenados por cantidad de cuotas.
     expect(r.lineas.map((l) => l.id)).toEqual(['contado', 'p3', 'p6']);
-    expect(r.lineas[1]).toMatchObject({ precioMoto: 2_300_000, valorCuota: 766_667, totalConGastos: 2_500_000 });
-    expect(r.lineas[2]).toMatchObject({ precioMoto: 2_500_000, valorCuota: 416_667, totalConGastos: 2_700_000 });
+    expect(r.lineas[1]).toMatchObject({ precioMoto: 2_300_000, valorCuota: 766_666.67, totalConGastos: 2_500_000 });
+    expect(r.lineas[2]).toMatchObject({ precioMoto: 2_500_000, valorCuota: 416_666.67, totalConGastos: 2_700_000 });
   });
 
   it('0 planes: sólo contado', () => {
@@ -68,23 +68,26 @@ describe('redondeo', () => {
     expect(lineaContado(999_999, 7.5, 0.5).totalConGastos).toBe(925_000);
   });
 
-  it('la cuota se calcula sobre el precio sin redondear', () => {
-    // 100.001 × 1,15 = 115.001,15; / 3 = 38.333,7166 → 38.334
+  it('la cuota es el precio que se muestra dividido, al centavo: cuotas × cuota da el precio', () => {
+    // 100.001 × 1,15 = 115.001,15 → 115.001; / 3 = 38.333,67 (al peso sería 38.334 y 3 × 38.334 = 115.002).
     const l = lineaPlan(100_001, { id: 'x', cuotas: 3, recargo: 15 }, 0);
     expect(l.precioMoto).toBe(115_001);
-    expect(l.valorCuota).toBe(38_334);
+    expect(l.valorCuota).toBe(38_333.67);
+    // 1.000.000 en 3: al peso daba 333.333 y 3 × 333.333 = 999.999.
+    expect(lineaPlan(1_000_000, { id: 'x', cuotas: 3, recargo: 0 }, 0).valorCuota).toBe(333_333.33);
   });
 
   it('.5 redondea hacia arriba', () => {
-    expect(lineaPlan(1, { id: 'x', cuotas: 2, recargo: 0 }, 0).valorCuota).toBe(1);
+    // 1 / 8 = 0,125 → 0,13
+    expect(lineaPlan(1, { id: 'x', cuotas: 8, recargo: 0 }, 0).valorCuota).toBe(0.13);
     expect(lineaContado(101, 50, 0).precioMoto).toBe(51);
   });
 
   it('.5 exacto sube aunque el float diga 458.755,4999… (30 % de 655.365)', () => {
     expect(lineaContado(655_365, 30, 0).precioMoto).toBe(458_756);
     expect(lineaPlan(863_500, { id: 'x', cuotas: 3, recargo: 1.5 }, 0).precioMoto).toBe(876_453);
-    // 1.692.125 × 1,16 / 10 = 196.286,5
-    expect(lineaPlan(1_692_125, { id: 'x', cuotas: 10, recargo: 16 }, 0).valorCuota).toBe(196_287);
+    // 1.692.125 × 1,16 = 1.962.865; / 8 = 245.358,125 → 245.358,13
+    expect(lineaPlan(1_692_125, { id: 'x', cuotas: 8, recargo: 16 }, 0).valorCuota).toBe(245_358.13);
   });
 });
 

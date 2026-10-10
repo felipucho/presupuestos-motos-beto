@@ -9,6 +9,7 @@ import {
   MEDIOS,
   mensajeDeuda,
   saldosCorridos,
+  saldosRecibo,
   totalItems,
   type Cargo,
   type Cliente,
@@ -82,12 +83,15 @@ export async function guardarComprobante([d, nombre]: [DatosComprobante, string]
 }
 
 const datosCliente = (c: Cliente) => ({ nombre: c.nombre, telefono: c.telefono, dni: c.dni });
+/** Para encontrar en la app el movimiento de un papel impreso. */
+export const numero = (m: Movimiento) => m.id.slice(0, 8).toUpperCase();
 
 export function vale(local: Local, c: Cliente, m: Cargo): [DatosComprobante, string] {
   return [
     {
       local,
       titulo: 'Vale de fiado',
+      numero: numero(m),
       fecha: m.fecha,
       cliente: datosCliente(c),
       conCantidades: true,
@@ -100,20 +104,22 @@ export function vale(local: Local, c: Cliente, m: Cargo): [DatosComprobante, str
   ];
 }
 
-export function recibo(local: Local, c: Cliente, m: Extract<Movimiento, { tipo: 'pago' }>, todos: readonly Movimiento[]): [DatosComprobante, string] {
-  const despues = saldosCorridos(todos).get(m.id) ?? 0;
+/** `todos`: los movimientos del cliente, incluido el pago. `hoy`: el saldo que se muestra es el de ese día. */
+export function recibo(local: Local, c: Cliente, m: Extract<Movimiento, { tipo: 'pago' }>, todos: readonly Movimiento[], hoy: string): [DatosComprobante, string] {
+  const { anterior, saldo } = saldosRecibo(todos, m);
   return [
     {
       local,
       titulo: 'Recibo de pago',
+      numero: numero(m),
       fecha: m.fecha,
       cliente: datosCliente(c),
       conCantidades: false,
       filas: [{ detalle: `Pago en ${etiquetaMedio(m.medio).toLowerCase()}`, sub: m.nota || undefined, importe: m.monto }],
       totales: [
-        { rotulo: 'Saldo anterior', valor: despues + m.monto },
+        ...(anterior === null ? [] : [{ rotulo: 'Saldo anterior', valor: anterior }]),
         { rotulo: 'Pagó', valor: m.monto },
-        { rotulo: despues < 0 ? 'Saldo a favor' : 'Saldo pendiente', valor: Math.abs(despues), destacado: true },
+        { rotulo: `${saldo < 0 ? 'Saldo a favor' : 'Saldo pendiente'} al ${formatoDia(hoy)}`, valor: Math.abs(saldo), destacado: true },
       ],
       nota: `Recibimos de ${c.nombre} la suma de ${formatoCentavos(m.monto)} a cuenta de su saldo. ${LEYENDA}`,
       firma: false,

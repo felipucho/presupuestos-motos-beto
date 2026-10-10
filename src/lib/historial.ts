@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { copiarDanado, guardarClave, leerClave } from './almacen';
+import { copiaDiaria } from './copia-diaria';
 
 /** Foto de lo que se presupuestó: no cambia si después se edita el catálogo o el vendedor. */
 export const registroSchema = z.object({
@@ -30,6 +31,8 @@ const ARCHIVO = 'historial.json';
 const CLAVE = 'presupuestos';
 const CLAVE_LOCAL = 'historial';
 
+let danadoCopiado: Promise<string | null> | null = null;
+
 /**
  * Devuelve los registros válidos, del más viejo al más nuevo. Si hay alguno dañado lo copia aparte
  * antes de seguir, porque el próximo guardado reescribe el archivo sin él.
@@ -47,12 +50,17 @@ export async function cargarHistorial(): Promise<{ registros: Registro[]; aviso:
     .sort((a, b) => Date.parse(a.fecha) - Date.parse(b.fecha));
   const malos = Array.isArray(crudo) ? lista.length - registros.length : 1;
   if (malos === 0) return { registros, aviso: null };
-  const ruta = await copiarDanado('historial-danado', crudo);
+  // Una copia por sesión alcanza: se lee en cada pantalla y cada guardado, y si no se acumularían iguales.
+  danadoCopiado ??= copiarDanado('historial-danado', crudo);
+  const ruta = await danadoCopiado;
   const copia = ruta ? ` Se guardó una copia en ${ruta}.` : '';
   return { registros, aviso: `Había ${malos === 1 ? 'un registro dañado' : `${malos} registros dañados`} en el historial y se dejaron afuera.${copia}` };
 }
 
-const escribir = (lista: Registro[]) => guardarClave(ARCHIVO, CLAVE, lista, CLAVE_LOCAL);
+const escribir = async (lista: Registro[]) => {
+  await guardarClave(ARCHIVO, CLAVE, lista, CLAVE_LOCAL);
+  copiaDiaria();
+};
 
 // Una escritura por vez: cada una lee lo último que dejó la anterior.
 let cola: Promise<unknown> = Promise.resolve();

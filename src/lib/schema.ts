@@ -18,6 +18,8 @@ export const localSchema = z.object({
   textoLegal: texto,
   // Con default para leer configuraciones anteriores a este campo.
   carpetaPdf: z.string().nullable().default(null),
+  // Null = la predeterminada de Windows.
+  impresora: z.string().nullable().default(null),
 });
 
 export const planSchema = z.object({
@@ -79,6 +81,7 @@ export const CONFIG_INICIAL: Config = {
     prefijo: 'MB',
     textoLegal: 'Precios sujetos a modificación sin previo aviso.',
     carpetaPdf: null,
+    impresora: null,
   },
   vendedores: [],
   descuentoContado: 0,

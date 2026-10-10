@@ -44,18 +44,32 @@ export function Backup() {
   };
 
   const aplicar = async (i: Importado) => {
+    let antes: Datos | null = null;
     let copia = '';
     try {
       // Antes de pisar nada, una copia de lo que hay: si el archivo era el equivocado, se recupera de ahí.
-      copia = await copiaAntesDeImportar(await actual());
-      // Una por una y esperando cada escritura: si una falla, el toast dice dónde quedó lo anterior.
-      await reemplazar(i.config);
+      antes = await actual();
+      copia = await copiaAntesDeImportar(antes);
+      // La carpeta de PDFs y la impresora son de esta computadora: no se traen de otra.
+      if (i.config) await reemplazar({ ...i.config, local: { ...i.config.local, carpetaPdf: config.local.carpetaPdf, impresora: config.local.impresora } });
       if (i.historial) await reemplazarHistorial(i.historial);
       if (i.fiados) await fiadosCtx.reemplazar(i.fiados);
       toast.success('Backup importado', { description: `Lo que había antes quedó guardado en ${copia}`, duration: 15000 });
     } catch (e) {
-      const antes = copia ? ` Lo que había antes quedó guardado en ${copia}.` : '';
-      toast.error('No se pudo importar', { description: `${String(e).replace(/\.$/, '')}.${antes}`, duration: Infinity });
+      // Si falló a mitad, se vuelve a lo de antes para no quedar con datos mezclados.
+      let vuelta = '';
+      if (antes) {
+        try {
+          await reemplazar(antes.config);
+          await reemplazarHistorial(antes.historial);
+          await fiadosCtx.reemplazar(antes.fiados);
+          vuelta = ' No se cambió nada: quedó todo como estaba.';
+        } catch {
+          vuelta = ' No se pudo volver a lo de antes: cerrá la app e importá esa copia.';
+        }
+      }
+      const enCopia = copia ? ` Lo que había antes quedó guardado en ${copia}.` : '';
+      toast.error('No se pudo importar', { description: `${String(e).replace(/\.$/, '')}.${vuelta}${enCopia}`, duration: Infinity });
     }
   };
 
@@ -73,7 +87,7 @@ export function Backup() {
     <>
       <EncabezadoSeccion
         titulo="Backup"
-        descripcion="Guardá todo (configuración, historial de presupuestos y fiados) en un archivo, para tener una copia o pasarla a otra computadora. Los fiados además se copian solos todos los días en la carpeta de la app."
+        descripcion="Guardá todo (configuración, historial de presupuestos y fiados) en un archivo, para tener una copia o pasarla a otra computadora. Además, todo se copia solo cada día en Documentos\Presupuestos Motos Beto\copias (una copia por día del mes), y esas copias también se pueden importar acá."
       />
       <div className="grid grid-cols-2 gap-4">
         <Card>
@@ -119,7 +133,13 @@ export function Backup() {
         {importado && (
           <>
             <p>
-              El archivo es del local «{importado.config.local.nombre}» y trae <b>{contar(importado.config)}</b>
+              {importado.config ? (
+                <>
+                  El archivo es del local «{importado.config.local.nombre}» y trae <b>{contar(importado.config)}</b>
+                </>
+              ) : (
+                <>Es una copia de sólo fiados</>
+              )}
               {importado.historial && (
                 <>
                   , <b>{contarHistorial(importado.historial)}</b>
@@ -127,12 +147,17 @@ export function Backup() {
               )}
               {importado.fiados && (
                 <>
-                  {' '}y <b>{contarFiados(importado.fiados)}</b>
+                  {importado.config ? ' y' : ' con'} <b>{contarFiados(importado.fiados)}</b>
                 </>
               )}
               .
             </p>
-            {importado.fiados ? (
+            {!importado.config ? (
+              <p className="mt-2">
+                Se reemplazan <b>todos los fiados</b>; la configuración y el historial no se tocan. Lo que hay ahora
+                {fiadosCtx.fiados && ` (${contarFiados(fiadosCtx.fiados)})`} se guarda antes en una copia.
+              </p>
+            ) : importado.fiados ? (
               <p className="mt-2">
                 Se reemplazan la configuración, el historial y <b>todos los fiados</b>. Lo que hay ahora{fiadosCtx.fiados && ` (${contarFiados(fiadosCtx.fiados)})`} se
                 guarda antes en una copia.

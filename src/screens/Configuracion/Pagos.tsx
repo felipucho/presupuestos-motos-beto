@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { lineaPlan } from '@/lib/calculos';
 import { useConfig } from '@/lib/config';
 import { quitarPor, upsertPor } from '@/lib/listas';
-import { etiquetaPlan, formatoMoneda, formatoNumero } from '@/lib/formato';
+import { etiquetaPlan, formatoMoneda, formatoNumero, formatoPesos } from '@/lib/formato';
 import { configSchema, erroresPorCampo, nuevoId, planSchema, type Plan } from '@/lib/schema';
 
 const EJEMPLO = 1_000_000;
@@ -96,7 +96,7 @@ export function Pagos() {
                       <TableCell className="font-medium">{etiquetaPlan(p.cuotas)}</TableCell>
                       <TableCell className="tabular text-right">{p.recargo > 0 ? `+${formatoNumero(p.recargo)} %` : 'Sin recargo'}</TableCell>
                       <TableCell className="tabular text-right text-tinta-media">
-                        {p.cuotas} × {formatoMoneda(lineaPlan(EJEMPLO, p, 0).valorCuota ?? 0)}
+                        {p.cuotas} × {formatoPesos(lineaPlan(EJEMPLO, p, 0).valorCuota ?? 0)}
                       </TableCell>
                       <TableCell>
                         <AccionesFila nombre={etiquetaPlan(p.cuotas)} onEditar={() => setEditando(p)} onBorrar={() => setBorrando(p)} />

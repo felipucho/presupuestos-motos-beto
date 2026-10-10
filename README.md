@@ -6,7 +6,7 @@ Funciona 100 % local y sin internet: no hay servidor, ni login, ni base de datos
 
 ## Instalar
 
-1. Descargar [`instalador/Presupuestos Motos Beto_1.0.0_x64-setup.exe`](instalador/).
+1. Descargar [`instalador/Presupuestos Motos Beto_1.2.0_x64-setup.exe`](instalador/).
 2. Ejecutarlo. Instala sólo para el usuario actual (no pide permisos de administrador) y crea accesos directos en el Escritorio y en el menú Inicio.
 3. Abrir la app y cargar los datos en **Configuración**: datos del local, vendedores, planes de tarjeta, gastos y catálogo de motos.
 

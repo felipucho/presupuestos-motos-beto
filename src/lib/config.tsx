@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { cargarConfig, guardarConfig } from './config-store';
+import { copiaDiaria } from './copia-diaria';
 import type { Config } from './schema';
 
 type Actualizar = (cambio: (c: Config) => Config, mensaje?: string | false) => void;
@@ -40,6 +41,7 @@ export function ConfigProvider({ children, fallback }: { children: ReactNode; fa
   const escribir = useCallback((c: Config) => {
     const p = cola.current.then(() => guardarConfig(c));
     cola.current = p.catch(() => undefined);
+    p.then(copiaDiaria).catch(() => undefined);
     return p;
   }, []);
 

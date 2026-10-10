@@ -18,13 +18,13 @@ fn cookies() -> &'static Arc<Jar> {
   JAR.get_or_init(|| Arc::new(Jar::default()))
 }
 
-fn cliente() -> &'static reqwest::Client {
+fn cliente() -> Result<&'static reqwest::Client, String> {
   static CLIENTE: OnceLock<reqwest::Client> = OnceLock::new();
-  CLIENTE.get_or_init(|| red::cliente(Some(cookies().clone())))
+  red::compartido(&CLIENTE, || red::crear(Some(cookies().clone())))
 }
 
 async fn get(url: &str) -> Result<String, String> {
-  let r = cliente().get(url).send().await.map_err(|e| falla(NOMBRE, e))?;
+  let r = cliente()?.get(url).send().await.map_err(|e| falla(NOMBRE, e))?;
   red::texto(NOMBRE, r).await
 }
 
@@ -46,7 +46,7 @@ async fn login() -> Result<(), String> {
   let cuenta = credenciales::leer("neumat")?.ok_or(SIN_SESION)?;
   let home = get(&format!("{SITIO}/Home")).await?;
   let token = token(&home).ok_or_else(|| rechazada("PIRELLI cambió su página: no se encontró el formulario de ingreso. Entrá a mano."))?;
-  let r = cliente()
+  let r = cliente()?
     .post(format!("{SITIO}/Login/?handler=LoginModal"))
     .header("XSRF-TOKEN", token)
     .form(&[("user", cuenta.usuario.as_str()), ("pass", cuenta.clave.as_str()), ("currentpage", &format!("{SITIO}/Home"))])

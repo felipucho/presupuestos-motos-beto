@@ -1,5 +1,6 @@
 const moneda = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 });
-const numero = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 });
+// Hasta 4 decimales: un 7,125 % se muestra como es, no como el 7,13 % que no se aplica.
+const numero = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 });
 
 /** $ 1.234.567 — el espacio de Intl es no separable, así el signo no queda solo al final de una línea. */
 export const formatoMoneda = (n: number) => moneda.format(n);
@@ -11,11 +12,18 @@ const conCentavos = new Intl.NumberFormat('es-AR', { style: 'currency', currency
 /** $ 7.575,31 a partir de centavos enteros. */
 export const formatoCentavos = (c: number) => conCentavos.format(c / 100);
 
-/** Sólo los dígitos de lo que se tipeó, como entero en pesos. null si está vacío o no entra en un número seguro. */
+/** Pesos sin decimales si es entero; si no, con centavos: $ 333.333,33. */
+export const formatoPesos = (n: number) => (Number.isInteger(n) ? moneda.format(n) : conCentavos.format(n));
+
+/**
+ * Pesos enteros a partir de lo tipeado o pegado: los puntos son de miles y unos centavos al final («1.234,56»)
+ * se redondean al peso. null si está vacío o no entra en un número seguro.
+ */
 export function parsearPesos(texto: string): number | null {
-  const d = texto.replace(/\D/g, '');
+  const centavos = /,(\d{1,2})\s*$/.exec(texto);
+  const d = (centavos ? texto.slice(0, centavos.index) : texto).replace(/\D/g, '');
   if (!d) return null;
-  const n = Number(d);
+  const n = Number(d) + (centavos && Number(centavos[1]!.padEnd(2, '0')) >= 50 ? 1 : 0);
   return Number.isSafeInteger(n) ? n : null;
 }
 
@@ -25,7 +33,8 @@ export function parsearPesos(texto: string): number | null {
  */
 export function parsearDecimal(texto: string): number {
   let t = texto.trim();
-  if (/^-?\d{1,3}(\.\d{3})+(,\d*)?$/.test(t)) t = t.replace(/\./g, '');
+  // El primer grupo no empieza con 0: «0.750» es 0,75, no 750.
+  if (/^-?[1-9]\d{0,2}(\.\d{3})+(,\d*)?$/.test(t)) t = t.replace(/\./g, '');
   t = t.replace(',', '.');
   return t === '' || !/^-?\d*\.?\d*$/.test(t) ? NaN : Number(t);
 }

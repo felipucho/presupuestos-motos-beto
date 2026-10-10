@@ -34,6 +34,9 @@ import { formatoCentavos } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
 /** Mismos centavos que se cargan al fiar: lo que se ve en pantalla es lo que queda guardado. */
+// Cada unidad es un clic real en el sitio del proveedor: tope bajo (el mismo que en motor.rs).
+const MAX_CARRITO = 50;
+const aCantidad = (texto: string) => Math.min(MAX_CARRITO, Math.max(1, Math.floor(Number(texto)) || 1));
 const enCentavos = (pesos: number) => formatoCentavos(aCentavos(pesos));
 
 const mensaje = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -231,11 +234,14 @@ function Listado({
   onAccion: (a: Accion) => void;
   onFicha: (a: Articulo) => void;
   onFiar: (a: Articulo) => void;
-  onCarrito?: (a: Articulo) => void;
+  onCarrito?: (a: Articulo, cantidad: number) => void;
   onAbrir: (a: Articulo) => void;
 }) {
   const { resultado, pagina, cargando } = estado;
   const paginas = Math.max(1, Math.ceil(resultado.total / resultado.porPagina));
+  // Cantidad elegida por artículo para el carrito, como texto para poder borrar mientras se escribe; sin elegir, 1.
+  const [cantidades, setCantidades] = useState<Record<string, string>>({});
+  const cantidadDe = (codigo: string) => aCantidad(cantidades[codigo] ?? '1');
 
   return (
     <>
@@ -317,19 +323,34 @@ function Listado({
                       <HandCoins />
                     </Button>
                     {onCarrito && a.carrito && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={sumando !== null}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onCarrito(a);
-                        }}
-                        aria-label={`Agregar ${a.detalle} al carrito`}
-                        title="Agregar 1 al carrito"
-                      >
-                        {sumando === a.codigo ? <LoaderCircle className="animate-spin" /> : <ShoppingCart />}
-                      </Button>
+                      <div className="inline-flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={1}
+                          max={MAX_CARRITO}
+                          value={cantidades[a.codigo] ?? 1}
+                          onChange={(e) => setCantidades((c) => ({ ...c, [a.codigo]: e.target.value }))}
+                          onBlur={() => setCantidades((c) => ({ ...c, [a.codigo]: String(cantidadDe(a.codigo)) }))}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Cantidad de ${a.detalle} para el carrito`}
+                          className="h-9 w-16 text-center"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={sumando !== null}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCarrito(a, cantidadDe(a.codigo));
+                            // Vuelve a 1: un segundo clic no repite sin querer una cantidad grande.
+                            setCantidades((c) => ({ ...c, [a.codigo]: '1' }));
+                          }}
+                          aria-label={`Agregar ${a.detalle} al carrito`}
+                          title="Agregar al carrito"
+                        >
+                          {sumando === a.codigo ? <LoaderCircle className="animate-spin" /> : <ShoppingCart />}
+                        </Button>
+                      </div>
                     )}
                     <Button
                       variant="ghost"
@@ -400,8 +421,9 @@ function FichaArticulo({
   onCarrito?: (a: Articulo, cantidad: number) => void;
   onAbrir: (a: Articulo) => void;
 }) {
-  const [cantidad, setCantidad] = useState(1);
-  useEffect(() => setCantidad(1), [articulo]);
+  // Como texto, para poder borrar mientras se escribe (si no, borrar y tipear 5 deja 15).
+  const [cantidad, setCantidad] = useState('1');
+  useEffect(() => setCantidad('1'), [articulo]);
   const [ficha, setFicha] = useState<Ficha | 'cargando' | 'sin-sesion' | { error: string }>('cargando');
 
   useEffect(() => {
@@ -484,12 +506,17 @@ function FichaArticulo({
                       <Input
                         type="number"
                         min={1}
+                        max={MAX_CARRITO}
                         value={cantidad}
-                        onChange={(e) => setCantidad(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+                        onChange={(e) => setCantidad(e.target.value)}
+                        onBlur={() => setCantidad(String(aCantidad(cantidad)))}
                         aria-label="Cantidad para el carrito"
                         className="h-9 w-16 rounded-r-none text-center"
                       />
-                      <Button variant="outline" className="rounded-l-none border-l-0" disabled={sumando !== null} onClick={() => onCarrito(articulo, cantidad)}>
+                      <Button variant="outline" className="rounded-l-none border-l-0" disabled={sumando !== null} onClick={() => {
+                          onCarrito(articulo, aCantidad(cantidad));
+                          setCantidad('1');
+                        }}>
                         {sumando === articulo.codigo ? <LoaderCircle className="animate-spin" /> : <ShoppingCart />} Al carrito
                       </Button>
                     </div>

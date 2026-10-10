@@ -25,7 +25,8 @@ pub async fn cba_abrir(app: AppHandle, codigo: String) -> Result<(), String> {
 }
 
 // JS que devuelve 'NO' mientras no haya sesión. Ab guarda el token en el almacenamiento de la página: se devuelve
-// para usarlo desde la app (si ya venció, cuenta como sin sesión).
+// para usarlo desde la app (si ya venció, cuenta como sin sesión). Sin lista ni descuentos no se inventan: la app
+// avisa que la página cambió en vez de mostrar precios de otra lista o sin bonificación.
 const LISTO_CBA: &str = "(() => location.pathname.toLowerCase().endsWith('/homeinterno.aspx') ? 'SI' : 'NO')()";
 const LISTO_NEUMAT: &str = "(() => [...document.links].some((a) => a.pathname.toLowerCase().endsWith('/logout')) ? 'SI' : 'NO')()";
 const LISTO_CHANGOMAX: &str = "(() => window.prestashop && prestashop.customer && prestashop.customer.is_logged ? 'SI' : 'NO')()";
@@ -34,7 +35,7 @@ const LISTO_AB: &str = r#"(() => { try {
   if (!t) return 'NO';
   const exp = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp;
   if (exp && exp * 1000 < Date.now()) return 'NO';
-  return JSON.stringify({ token: t, usuario: localStorage.getItem('user') || '', lista: localStorage.getItem('listPrice') || '1', descuentos: JSON.parse(localStorage.getItem('descuento') || '[]') });
+  return JSON.stringify({ token: t, usuario: localStorage.getItem('user') || '', lista: localStorage.getItem('listPrice') || '', descuentos: JSON.parse(localStorage.getItem('descuento') || 'null') });
 } catch (e) { return 'NO'; } })()"#;
 
 /// Login a mano en la página del proveedor, en una ventana aparte sin acceso a la app: para cuando no hay cuenta

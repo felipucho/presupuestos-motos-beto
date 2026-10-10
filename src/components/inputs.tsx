@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 type Base = Omit<ComponentProps<'input'>, 'value' | 'onChange' | 'type'>;
 
 /** Pesos enteros con formato "$ 1.234.567" mientras se escribe; conserva el cursor entre los dígitos. */
-export function InputDinero({ value, onValueChange, className, ...props }: Base & { value: number | null; onValueChange: (v: number | null) => void }) {
+export function InputDinero({ value, onValueChange, className, onKeyDown, ...props }: Base & { value: number | null; onValueChange: (v: number | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
   const digitosAntesDelCursor = useRef<number | null>(null);
   const texto = value === null ? '' : formatoMoneda(value);
@@ -34,6 +34,11 @@ export function InputDinero({ value, onValueChange, className, ...props }: Base 
         const caret = e.target.selectionStart ?? e.target.value.length;
         digitosAntesDelCursor.current = e.target.value.slice(0, caret).replace(/\D/g, '').length;
         onValueChange(parsearPesos(e.target.value));
+      }}
+      onKeyDown={(e) => {
+        // Pesos enteros: la coma no se vería y los dígitos de después pasarían a ser pesos (1234,5 → 12.345).
+        if (e.key === ',') e.preventDefault();
+        onKeyDown?.(e);
       }}
       {...props}
     />

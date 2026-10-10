@@ -1,20 +1,33 @@
 //! Lo común a los proveedores que se consultan por HTTP: mensajes de error que dicen qué pasó y la copia de la
 //! sesión que el usuario abrió a mano en una ventana de la app.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use reqwest::cookie::Jar;
 use tauri::{AppHandle, Manager, Url};
 
 /// Cliente con cookies propias y tope de tiempo, para que una página colgada no deje la búsqueda girando.
-pub(crate) fn cliente(cookies: Option<Arc<Jar>>) -> reqwest::Client {
+/// Devuelve error en vez de `expect`: en release `panic = "abort"` cerraría la app sin decir nada si falla TLS.
+pub(crate) fn crear(cookies: Option<Arc<Jar>>) -> Result<reqwest::Client, String> {
   let b = reqwest::Client::builder().timeout(Duration::from_secs(30));
   let b = match cookies {
     Some(j) => b.cookie_provider(j),
     None => b,
   };
-  b.build().expect("cliente HTTP válido")
+  b.build().map_err(|e| format!("No se pudo preparar la conexión segura de Windows: {e}"))
+}
+
+/// Cliente guardado en `celda`, creado la primera vez que hace falta (si falla, se reintenta en el próximo pedido).
+pub(crate) fn compartido(
+  celda: &'static OnceLock<reqwest::Client>,
+  crear: impl FnOnce() -> Result<reqwest::Client, String>,
+) -> Result<&'static reqwest::Client, String> {
+  if let Some(c) = celda.get() {
+    return Ok(c);
+  }
+  let c = crear()?;
+  Ok(celda.get_or_init(|| c))
 }
 
 /// Explica en castellano por qué falló el pedido.
