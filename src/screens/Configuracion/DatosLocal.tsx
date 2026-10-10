@@ -6,28 +6,22 @@ import { Campo, invalido } from '@/components/campo';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useConfig } from '@/lib/config';
 import { erroresPorCampo, localSchema, type Local } from '@/lib/schema';
 import { carpetaPorDefecto, elegirCarpeta } from '@/lib/archivos';
 import { enTauri } from '@/lib/entorno';
-import { listarImpresoras } from '@/pdf/imprimir';
 
 type Texto = Exclude<keyof Local, 'carpetaPdf' | 'impresora'>;
-// Radix no admite un valor vacío en un SelectItem: este valor representa «sin impresora elegida».
-const PREDETERMINADA = '__predeterminada__';
 
 export function DatosLocal() {
   const { config, actualizar } = useConfig();
   const [d, setD] = useState<Local>(config.local);
   const [errores, setErrores] = useState<Record<string, string>>({});
   const [porDefecto, setPorDefecto] = useState('');
-  const [impresoras, setImpresoras] = useState<string[]>([]);
 
   useEffect(() => {
     if (enTauri) void carpetaPorDefecto().then(setPorDefecto).catch(() => setPorDefecto(''));
-    if (enTauri) listarImpresoras().then(setImpresoras).catch((e: unknown) => toast.error('No se pudo leer la lista de impresoras', { description: String(e) }));
   }, []);
   // Si cambia desde afuera (p. ej. al importar un backup), se refleja acá.
   useEffect(() => setD(config.local), [config.local]);
@@ -57,9 +51,6 @@ export function DatosLocal() {
       toast.error('No se pudo elegir la carpeta', { description: String(e) });
     }
   };
-
-  // Si la impresora guardada no aparece (otra PC, o está apagada), igual se muestra para no perder la elección.
-  const opciones = d.impresora && !impresoras.includes(d.impresora) ? [d.impresora, ...impresoras] : impresoras;
 
   return (
     <>
@@ -119,26 +110,6 @@ export function DatosLocal() {
                   </Button>
                 )}
               </div>
-            </Campo>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="px-5">
-            <Campo id="impresora" label="Impresora para imprimir los presupuestos" ayuda="Si no elegís una, se usa la predeterminada de Windows.">
-              <Select value={d.impresora ?? PREDETERMINADA} onValueChange={(v) => guardar({ ...d, impresora: v === PREDETERMINADA ? null : v })}>
-                <SelectTrigger id="impresora" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PREDETERMINADA}>Predeterminada de Windows</SelectItem>
-                  {opciones.map((n) => (
-                    <SelectItem key={n} value={n}>
-                      {n}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </Campo>
           </CardContent>
         </Card>

@@ -1,19 +1,21 @@
 import { useState } from 'react';
-import { Bike, CloudUpload, CreditCard, DatabaseBackup, Receipt, Store, Truck, UsersRound, type LucideIcon } from 'lucide-react';
+import { Bike, CloudUpload, CreditCard, DatabaseBackup, Printer, Receipt, Store, Truck, UsersRound, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Backup } from './Backup';
 import { Catalogo } from './Catalogo';
 import { DatosLocal } from './DatosLocal';
 import { Gastos } from './Gastos';
+import { Impresora } from './Impresora';
 import { Pagos } from './Pagos';
 import { Proveedores } from './Proveedores';
 import { Respaldo } from './Respaldo';
 import { Vendedores } from './Vendedores';
 
-type Seccion = 'local' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'proveedores' | 'backup' | 'respaldo';
+type Seccion = 'local' | 'impresora' | 'vendedores' | 'pagos' | 'gastos' | 'catalogo' | 'proveedores' | 'backup' | 'respaldo';
 
 const SECCIONES: { id: Seccion; label: string; icono: LucideIcon }[] = [
   { id: 'local', label: 'Datos del local', icono: Store },
+  { id: 'impresora', label: 'Impresora', icono: Printer },
   { id: 'vendedores', label: 'Vendedores', icono: UsersRound },
   { id: 'pagos', label: 'Pagos', icono: CreditCard },
   { id: 'gastos', label: 'Gastos', icono: Receipt },
@@ -55,6 +57,7 @@ export function Configuracion() {
         <main key={seccion} className="min-w-0 flex-1 animate-in overflow-y-auto pr-1 pb-10 duration-200 fade-in-0">
           <div className="max-w-4xl">
             {seccion === 'local' && <DatosLocal />}
+            {seccion === 'impresora' && <Impresora />}
             {seccion === 'vendedores' && <Vendedores />}
             {seccion === 'pagos' && <Pagos />}
             {seccion === 'gastos' && <Gastos />}

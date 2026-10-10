@@ -1,6 +1,6 @@
 [package]
 name = "presupuestos-motos-beto"
-version = "1.2.0"
+version = "1.2.1"
 description = "Generador de presupuestos de Motos Beto"
 authors = ["Motos Beto"]
 edition = "2024"
